@@ -1,0 +1,20 @@
+services:
+  app:
+    build: .
+    container_name: family-task-board
+    ports:
+      - "5123:5000"
+    environment:
+      - DATABASE_URL=file:/app/server/data/prod.db
+      - JWT_SECRET=bc4ee162-ca79-43ac-b0a4-aaf34ae53f23
+      - PORT=5000
+      - NODE_ENV=production
+    volumes:
+      - ./data:/app/server/data
+    networks:
+      - budget_budget-network
+    restart: always
+
+networks:
+  budget_budget-network:
+    external: true

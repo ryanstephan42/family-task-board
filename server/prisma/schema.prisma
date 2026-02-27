@@ -1,0 +1,113 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String   @id @default(uuid())
+  username      String   @unique
+  password      String
+  name          String
+  createdTasks  Task[]   @relation("CreatedBy")
+  assignedTasks Task[]   @relation("AssignedTo")
+  events        Event[]
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model Task {
+
+  id              String    @id @default(uuid())
+
+  title           String
+
+  description     String?
+
+  status          String    @default("TODO") // TODO, IN_PROGRESS, DONE
+
+  type            String    @default("FAMILY") // FAMILY, PRIVATE, CHORE
+
+  priority        String    @default("MEDIUM") // LOW, MEDIUM, HIGH
+
+  dueDate         DateTime?
+
+  isRepeating     Boolean   @default(false)
+
+  repeatFrequency String?   // DAILY, WEEKLY, MONTHLY, YEARLY
+
+  steps           Step[]
+
+  creatorId       String
+
+  creator         User      @relation("CreatedBy", fields: [creatorId], references: [id])
+
+  assigneeId      String?
+
+  assignee        User?     @relation("AssignedTo", fields: [assigneeId], references: [id])
+
+  createdAt       DateTime  @default(now())
+
+  updatedAt       DateTime  @updatedAt
+
+}
+
+
+
+model Event {
+
+  id              String    @id @default(uuid())
+
+  title           String
+
+  description     String?
+
+  startTime       DateTime
+
+  endTime         DateTime?
+
+  location        String?
+
+  isRepeating     Boolean   @default(false)
+
+  repeatFrequency String?   // DAILY, WEEKLY, MONTHLY, YEARLY
+
+  color           String    @default("#0ea5e9") // Default sky-500
+
+  creatorId       String
+
+  creator         User      @relation(fields: [creatorId], references: [id])
+
+  createdAt       DateTime  @default(now())
+
+  updatedAt       DateTime  @updatedAt
+
+}
+
+model Step {
+  id        String  @id @default(uuid())
+  content   String
+  completed Boolean @default(false)
+  taskId    String
+  task      Task    @relation(fields: [taskId], references: [id], onDelete: Cascade)
+}
+
+model GroceryItem {
+  id        String   @id @default(uuid())
+  name      String
+  quantity  String?
+  details   String?
+  category  String?
+  completed Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ItemCategoryPreference {
+  id       String @id @default(uuid())
+  itemName String @unique
+  category String
+}
