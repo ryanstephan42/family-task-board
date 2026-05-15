@@ -12,9 +12,9 @@ services:
     volumes:
       - ./data:/app/server/data
     networks:
-      - budget_budget-network
+      - home-network
     restart: always
 
 networks:
-  budget_budget-network:
+  home-network:
     external: true
