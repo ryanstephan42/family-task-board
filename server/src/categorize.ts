@@ -113,3 +113,93 @@ export function suggestExpirationDate(category: string, purchaseDate: Date = new
   date.setDate(date.getDate() + days);
   return date;
 }
+
+// Common, sensible units offered in the UI (customizable - users can also
+// type any free-text unit, which then gets remembered per item name).
+export const COMMON_UNITS = [
+  'count', 'lbs', 'oz', 'g', 'kg', 'bags', 'boxes', 'cans', 'bottles',
+  'cartons', 'gallons', 'quarts', 'liters', 'packs', 'rolls', 'dozen', 'loaf',
+];
+
+// Keyword -> unit map so a freshly-added item gets a sensible default unit
+// (e.g. "chicken breast" -> lbs, "eggs" -> dozen) before any per-item memory
+// exists. Checked in order, first match wins.
+const UNIT_KEYWORD_MAP: { unit: string; keywords: string[] }[] = [
+  { unit: 'dozen', keywords: ['egg'] },
+  { unit: 'gallon', keywords: ['milk', 'apple juice', 'orange juice'] },
+  { unit: 'loaf', keywords: ['bread'] },
+  {
+    unit: 'count',
+    keywords: [
+      'apple', 'banana', 'orange', 'lemon', 'lime', 'avocado', 'tomato',
+      'cucumber', 'onion', 'potato', 'bell pepper',
+    ],
+  },
+  {
+    unit: 'lbs',
+    keywords: [
+      'chicken', 'beef', 'pork', 'turkey', 'steak', 'ground beef', 'fish',
+      'salmon', 'shrimp', 'meat', 'bacon', 'sausage', 'ham',
+    ],
+  },
+  { unit: 'bags', keywords: ['frozen', 'chips', 'pretzel', 'rice', 'sugar', 'flour', 'popcorn'] },
+  { unit: 'cans', keywords: ['soup', 'canned', 'beans', 'tuna', 'soda'] },
+  { unit: 'bottles', keywords: ['water', 'juice', 'wine', 'beer', 'ketchup', 'oil', 'vinegar'] },
+  { unit: 'rolls', keywords: ['paper towel', 'toilet paper'] },
+];
+
+// Fallback default unit per category when no keyword or learned
+// preference matches.
+const CATEGORY_DEFAULT_UNIT: Record<string, string> = {
+  'Dairy & Eggs': 'count',
+  'Produce': 'lbs',
+  'Meat & Seafood': 'lbs',
+  'Frozen': 'bags',
+  'Bakery': 'count',
+  'Pantry & Canned': 'boxes',
+  'Snacks': 'bags',
+  'Beverages': 'bottles',
+  'Household': 'count',
+  'General': 'count',
+};
+
+export function guessUnit(name: string, category?: string): string {
+  const normalized = name.toLowerCase();
+  for (const { unit, keywords } of UNIT_KEYWORD_MAP) {
+    if (keywords.some((kw) => normalized.includes(kw))) return unit;
+  }
+  return CATEGORY_DEFAULT_UNIT[category || 'General'] || 'count';
+}
+
+/**
+ * Resolve the best unit for an item, preferring an explicit value, then a
+ * learned ItemUnitPreference (remembered from a prior edit), then a
+ * keyword/category-based smart guess.
+ */
+export async function resolveUnit(
+  prisma: PrismaClient,
+  name: string,
+  explicitUnit?: string | null,
+  category?: string
+): Promise<string> {
+  if (explicitUnit) return explicitUnit;
+
+  const pref = await prisma.itemUnitPreference.findUnique({
+    where: { itemName: name.toLowerCase().trim() },
+  });
+  if (pref) return pref.unit;
+
+  return guessUnit(name, category);
+}
+
+/**
+ * Remember a user's chosen unit for this item name so future adds/scans
+ * default to it automatically.
+ */
+export async function rememberUnit(prisma: PrismaClient, name: string, unit: string): Promise<void> {
+  await prisma.itemUnitPreference.upsert({
+    where: { itemName: name.toLowerCase().trim() },
+    update: { unit },
+    create: { itemName: name.toLowerCase().trim(), unit },
+  });
+}

@@ -3,3 +3,6 @@ node_modules
 .env
 
 /generated/prisma
+
+# Uploaded item photos (persisted via the mounted data volume in production)
+/data/uploads

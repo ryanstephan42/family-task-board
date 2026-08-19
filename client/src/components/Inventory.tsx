@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import api from '../services/api';
+import api, { resolveUploadUrl } from '../services/api';
 import {
   Plus,
   Trash2,
@@ -9,6 +9,8 @@ import {
   X,
   Camera,
   AlertTriangle,
+  ImagePlus,
+  ImageOff,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { clsx } from 'clsx';
@@ -22,8 +24,10 @@ interface FoodItem {
   category: string;
   location: string;
   purchaseDate: string;
+  trackExpiration: boolean;
   expirationDate: string | null;
   notes: string | null;
+  photoUrl: string | null;
 }
 
 const LOCATIONS = ['All', 'Fridge', 'Freezer', 'Pantry'];
@@ -66,6 +70,7 @@ const Inventory = () => {
   const [showScanner, setShowScanner] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<Partial<FoodItem>>({});
+  const [unitOptions, setUnitOptions] = useState<string[]>([]);
 
   const fetchItems = async () => {
     try {
@@ -76,8 +81,18 @@ const Inventory = () => {
     }
   };
 
+  const fetchUnitOptions = async () => {
+    try {
+      const res = await api.get('/inventory/unit-options');
+      setUnitOptions(res.data.commonUnits || []);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   useEffect(() => {
     fetchItems();
+    fetchUnitOptions();
   }, []);
 
   const handleBulkSubmit = async () => {
@@ -128,12 +143,35 @@ const Inventory = () => {
     setEditForm(item);
   };
 
+  const handlePhotoUpload = async (itemId: string, file: File) => {
+    const formData = new FormData();
+    formData.append('photo', file);
+    try {
+      const res = await api.post(`/inventory/${itemId}/photo`, formData);
+      fetchItems();
+      if (editingId === itemId) setEditForm((prev) => ({ ...prev, photoUrl: res.data.photoUrl }));
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handlePhotoRemove = async (itemId: string) => {
+    try {
+      await api.delete(`/inventory/${itemId}/photo`);
+      fetchItems();
+      if (editingId === itemId) setEditForm((prev) => ({ ...prev, photoUrl: null }));
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   const handleUpdate = async () => {
     if (!editingId || !editForm.name) return;
     try {
       await api.put(`/inventory/${editingId}`, editForm);
       setEditingId(null);
       fetchItems();
+      fetchUnitOptions(); // Refresh in case a new unit was learned
     } catch (err) {
       console.error(err);
     }
@@ -150,6 +188,11 @@ const Inventory = () => {
 
   return (
     <div className="bg-slate-900/40 rounded-2xl border border-slate-800/50 p-6 h-full flex flex-col">
+      <datalist id="unit-options">
+        {unitOptions.map((u) => (
+          <option key={u} value={u} />
+        ))}
+      </datalist>
       <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <h2 className="text-xl font-bold text-slate-100 flex items-center">
           <Package className="mr-2 text-sky-500" size={24} />
@@ -255,14 +298,46 @@ const Inventory = () => {
                     >
                       {editingId === item.id ? (
                         <div className="space-y-3 p-1">
-                          <input
-                            type="text"
-                            value={editForm.name}
-                            onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                            className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm text-slate-100"
-                            placeholder="Item Name"
-                          />
-                          <div className="grid grid-cols-3 gap-2">
+                          <div className="flex items-center space-x-3">
+                            {editForm.photoUrl ? (
+                              <div className="relative shrink-0">
+                                <img
+                                  src={resolveUploadUrl(editForm.photoUrl) || ''}
+                                  alt={editForm.name}
+                                  className="w-14 h-14 rounded-lg object-cover border border-slate-700"
+                                />
+                                <button
+                                  onClick={() => handlePhotoRemove(item.id)}
+                                  className="absolute -top-1.5 -right-1.5 bg-slate-900 border border-slate-700 rounded-full p-0.5 text-slate-400 hover:text-red-400"
+                                  title="Remove photo"
+                                >
+                                  <ImageOff size={12} />
+                                </button>
+                              </div>
+                            ) : (
+                              <label className="w-14 h-14 shrink-0 rounded-lg border-2 border-dashed border-slate-700 hover:border-sky-500 flex items-center justify-center text-slate-500 hover:text-sky-400 cursor-pointer transition-colors">
+                                <ImagePlus size={20} />
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  capture="environment"
+                                  className="hidden"
+                                  onChange={(e) => {
+                                    const file = e.target.files?.[0];
+                                    if (file) handlePhotoUpload(item.id, file);
+                                  }}
+                                />
+                              </label>
+                            )}
+                            <input
+                              type="text"
+                              value={editForm.name}
+                              onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                              className="flex-1 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm text-slate-100"
+                              placeholder="Item Name"
+                            />
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
                             <div className="space-y-1">
                               <label className="text-[10px] text-slate-500 font-bold uppercase">Qty</label>
                               <input
@@ -272,6 +347,19 @@ const Inventory = () => {
                                 className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm text-slate-100"
                               />
                             </div>
+                            <div className="space-y-1">
+                              <label className="text-[10px] text-slate-500 font-bold uppercase">Unit</label>
+                              <input
+                                type="text"
+                                list="unit-options"
+                                value={editForm.unit || ''}
+                                onChange={(e) => setEditForm({ ...editForm, unit: e.target.value })}
+                                placeholder="e.g. lbs, bags"
+                                className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm text-slate-100"
+                              />
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
                             <div className="space-y-1">
                               <label className="text-[10px] text-slate-500 font-bold uppercase">Category</label>
                               <input
@@ -294,15 +382,35 @@ const Inventory = () => {
                               </select>
                             </div>
                           </div>
-                          <div className="space-y-1">
-                            <label className="text-[10px] text-slate-500 font-bold uppercase">Expiration Date</label>
-                            <input
-                              type="date"
-                              value={editForm.expirationDate ? new Date(editForm.expirationDate).toISOString().split('T')[0] : ''}
-                              onChange={(e) => setEditForm({ ...editForm, expirationDate: e.target.value })}
-                              className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm text-slate-100"
-                            />
+                          <div className="flex items-center justify-between bg-slate-900 border border-slate-700 rounded px-2 py-1.5">
+                            <label className="text-[10px] text-slate-400 font-bold uppercase">Track Expiration</label>
+                            <button
+                              type="button"
+                              onClick={() => setEditForm({ ...editForm, trackExpiration: !editForm.trackExpiration })}
+                              className={clsx(
+                                'w-9 h-5 rounded-full relative transition-colors shrink-0',
+                                editForm.trackExpiration ? 'bg-sky-600' : 'bg-slate-700'
+                              )}
+                            >
+                              <span
+                                className={clsx(
+                                  'absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform',
+                                  editForm.trackExpiration ? 'translate-x-4' : 'translate-x-0.5'
+                                )}
+                              />
+                            </button>
                           </div>
+                          {editForm.trackExpiration && (
+                            <div className="space-y-1">
+                              <label className="text-[10px] text-slate-500 font-bold uppercase">Expiration Date</label>
+                              <input
+                                type="date"
+                                value={editForm.expirationDate ? new Date(editForm.expirationDate).toISOString().split('T')[0] : ''}
+                                onChange={(e) => setEditForm({ ...editForm, expirationDate: e.target.value })}
+                                className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm text-slate-100"
+                              />
+                            </div>
+                          )}
                           <div className="flex space-x-2 pt-1">
                             <button onClick={handleUpdate} className="flex-1 py-1.5 bg-sky-600 text-white text-xs font-bold rounded">Save</button>
                             <button onClick={() => setEditingId(null)} className="flex-1 py-1.5 bg-slate-700 text-white text-xs font-bold rounded">Cancel</button>
@@ -311,16 +419,27 @@ const Inventory = () => {
                       ) : (
                         <div className="flex items-center justify-between">
                           <div className="flex items-center space-x-3 flex-1 min-w-0">
+                            {item.photoUrl ? (
+                              <img
+                                src={resolveUploadUrl(item.photoUrl) || ''}
+                                alt={item.name}
+                                className="w-10 h-10 rounded-lg object-cover border border-slate-700 shrink-0"
+                              />
+                            ) : (
+                              <div className="w-10 h-10 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-600 shrink-0">
+                                <Package size={16} />
+                              </div>
+                            )}
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center flex-wrap gap-1.5">
                                 <span className="font-medium text-slate-200 truncate">{item.name}</span>
                                 <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">
                                   {item.location}
                                 </span>
-                                {days !== null && days <= 3 && (
+                                {item.trackExpiration && days !== null && days <= 3 && (
                                   <AlertTriangle size={12} className="text-amber-400 shrink-0" />
                                 )}
-                                <ExpirationBadge expirationDate={item.expirationDate} />
+                                {item.trackExpiration && <ExpirationBadge expirationDate={item.expirationDate} />}
                               </div>
                               <p className="text-xs text-slate-500 mt-0.5">
                                 Purchased {new Date(item.purchaseDate).toLocaleDateString()}

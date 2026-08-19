@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { authenticateToken, AuthRequest } from '../auth';
-import { resolveCategory, suggestExpirationDate } from '../categorize';
+import { resolveCategory, resolveUnit, suggestExpirationDate } from '../categorize';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -102,17 +102,18 @@ router.post('/:id/purchase', authenticateToken, async (req: AuthRequest, res: Re
     if (!groceryItem) return res.status(404).json({ error: 'Grocery item not found' });
 
     const category = await resolveCategory(prisma, groceryItem.name, groceryItem.category);
+    const unit = await resolveUnit(prisma, groceryItem.name, undefined, category);
     const purchaseDate = new Date();
     const foodItem = await prisma.foodItem.create({
       data: {
         name: groceryItem.name,
         quantity: 1,
-        unit: groceryItem.quantity || null,
+        unit,
         category,
         location: location || 'Pantry',
         purchaseDate,
         expirationDate: suggestExpirationDate(category, purchaseDate),
-        notes: groceryItem.details || null,
+        notes: groceryItem.details || groceryItem.quantity || null,
       },
     });
 

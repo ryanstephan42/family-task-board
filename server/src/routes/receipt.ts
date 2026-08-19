@@ -1,11 +1,13 @@
 import { Router, Response } from 'express';
 import multer from 'multer';
 import { createWorker } from 'tesseract.js';
+import { PrismaClient } from '@prisma/client';
 import { authenticateToken, AuthRequest } from '../auth';
 import { parseReceiptText, ParsedReceiptItem } from '../receiptParser';
-import { guessCategory } from '../categorize';
+import { resolveCategory, resolveUnit } from '../categorize';
 
 const router = Router();
+const prisma = new PrismaClient();
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 15 * 1024 * 1024 }, // 15MB
@@ -13,6 +15,7 @@ const upload = multer({
 
 interface ReviewItem extends ParsedReceiptItem {
   category: string;
+  unit: string;
 }
 
 // Run local OCR (Tesseract) on the uploaded image and heuristically
@@ -113,10 +116,13 @@ router.post('/scan', authenticateToken, upload.single('receipt'), async (req: Au
       method = 'local';
     }
 
-    const items: ReviewItem[] = parsedItems.map((item) => ({
-      ...item,
-      category: guessCategory(item.name),
-    }));
+    const items: ReviewItem[] = await Promise.all(
+      parsedItems.map(async (item) => {
+        const category = await resolveCategory(prisma, item.name);
+        const unit = await resolveUnit(prisma, item.name, undefined, category);
+        return { ...item, category, unit };
+      })
+    );
 
     res.json({ method, items });
   } catch (error) {

@@ -10,6 +10,7 @@ interface ReceiptScanModalProps {
 interface ReviewItem {
   name: string;
   quantity: number;
+  unit: string;
   category: string;
   price?: number;
 }
@@ -42,6 +43,7 @@ const ReceiptScanModal = ({ onClose, onImported }: ReceiptScanModalProps) => {
         (res.data.items || []).map((it: any) => ({
           name: it.name,
           quantity: it.quantity && it.quantity > 0 ? it.quantity : 1,
+          unit: it.unit || 'count',
           category: it.category || 'General',
           price: it.price,
         }))
@@ -73,6 +75,7 @@ const ReceiptScanModal = ({ onClose, onImported }: ReceiptScanModalProps) => {
         items: reviewItems.map((it) => ({
           name: it.name,
           quantity: it.quantity,
+          unit: it.unit,
           category: it.category,
           location,
         })),
@@ -167,6 +170,13 @@ const ReceiptScanModal = ({ onClose, onImported }: ReceiptScanModalProps) => {
                       value={item.quantity}
                       onChange={(e) => updateItem(idx, { quantity: Number(e.target.value) })}
                       className="w-14 bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-sm text-slate-100"
+                    />
+                    <input
+                      type="text"
+                      value={item.unit}
+                      onChange={(e) => updateItem(idx, { unit: e.target.value })}
+                      placeholder="unit"
+                      className="w-16 shrink-0 bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-sm text-slate-100"
                     />
                     <input
                       type="text"
