@@ -1,0 +1,388 @@
+import { useState, useEffect } from 'react';
+import api from '../services/api';
+import {
+  Plus,
+  Trash2,
+  Edit2,
+  Minus,
+  Package,
+  X,
+  Camera,
+  AlertTriangle,
+} from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { clsx } from 'clsx';
+import ReceiptScanModal from './ReceiptScanModal';
+
+interface FoodItem {
+  id: string;
+  name: string;
+  quantity: number;
+  unit: string | null;
+  category: string;
+  location: string;
+  purchaseDate: string;
+  expirationDate: string | null;
+  notes: string | null;
+}
+
+const LOCATIONS = ['All', 'Fridge', 'Freezer', 'Pantry'];
+
+const daysUntil = (dateStr: string | null) => {
+  if (!dateStr) return null;
+  const diffMs = new Date(dateStr).setHours(0, 0, 0, 0) - new Date().setHours(0, 0, 0, 0);
+  return Math.round(diffMs / (1000 * 60 * 60 * 24));
+};
+
+const ExpirationBadge = ({ expirationDate }: { expirationDate: string | null }) => {
+  const days = daysUntil(expirationDate);
+  if (days === null) return null;
+
+  let classes = 'bg-slate-800 text-slate-400 border-slate-700';
+  let label = `${days}d left`;
+  if (days < 0) {
+    classes = 'bg-red-500/10 text-red-400 border-red-500/30';
+    label = 'Expired';
+  } else if (days === 0) {
+    classes = 'bg-red-500/10 text-red-400 border-red-500/30';
+    label = 'Today';
+  } else if (days <= 3) {
+    classes = 'bg-amber-500/10 text-amber-400 border-amber-500/30';
+  }
+
+  return (
+    <span className={clsx('text-[10px] font-bold px-1.5 py-0.5 rounded border whitespace-nowrap', classes)}>
+      {label}
+    </span>
+  );
+};
+
+const Inventory = () => {
+  const [items, setItems] = useState<FoodItem[]>([]);
+  const [locationFilter, setLocationFilter] = useState('All');
+  const [bulkInput, setBulkInput] = useState('');
+  const [bulkLocation, setBulkLocation] = useState('Pantry');
+  const [isAdding, setIsAdding] = useState(false);
+  const [showScanner, setShowScanner] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<Partial<FoodItem>>({});
+
+  const fetchItems = async () => {
+    try {
+      const res = await api.get('/inventory');
+      setItems(res.data);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  useEffect(() => {
+    fetchItems();
+  }, []);
+
+  const handleBulkSubmit = async () => {
+    if (!bulkInput.trim()) return;
+
+    const names = bulkInput
+      .split(/,|\n/)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+
+    const newItems = names.map((name) => ({ name, location: bulkLocation }));
+
+    try {
+      await api.post('/inventory', { items: newItems });
+      setBulkInput('');
+      setIsAdding(false);
+      fetchItems();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleAdjustQuantity = async (item: FoodItem, delta: number) => {
+    if (item.quantity + delta <= 0) {
+      handleDelete(item.id, true);
+      return;
+    }
+    try {
+      await api.patch(`/inventory/${item.id}/quantity`, { delta });
+      fetchItems();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleDelete = async (id: string, skipConfirm = false) => {
+    if (!skipConfirm && !confirm('Remove this item from inventory?')) return;
+    try {
+      await api.delete(`/inventory/${id}`);
+      fetchItems();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleEdit = (item: FoodItem) => {
+    setEditingId(item.id);
+    setEditForm(item);
+  };
+
+  const handleUpdate = async () => {
+    if (!editingId || !editForm.name) return;
+    try {
+      await api.put(`/inventory/${editingId}`, editForm);
+      setEditingId(null);
+      fetchItems();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const filteredItems = locationFilter === 'All' ? items : items.filter((i) => i.location === locationFilter);
+
+  const groupedItems = filteredItems.reduce((acc, item) => {
+    const cat = item.category || 'General';
+    if (!acc[cat]) acc[cat] = [];
+    acc[cat].push(item);
+    return acc;
+  }, {} as Record<string, FoodItem[]>);
+
+  return (
+    <div className="bg-slate-900/40 rounded-2xl border border-slate-800/50 p-6 h-full flex flex-col">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+        <h2 className="text-xl font-bold text-slate-100 flex items-center">
+          <Package className="mr-2 text-sky-500" size={24} />
+          Food Inventory
+        </h2>
+        <div className="flex items-center space-x-2">
+          <button
+            onClick={() => setShowScanner(true)}
+            className="px-3 py-2 bg-slate-800 hover:bg-sky-600 text-slate-300 hover:text-white rounded-lg transition-all text-xs font-bold flex items-center"
+            title="Scan Receipt"
+          >
+            <Camera size={16} className="mr-1.5" />
+            Scan Receipt
+          </button>
+          <button
+            onClick={() => setIsAdding(!isAdding)}
+            className="p-2 bg-sky-600 hover:bg-sky-500 text-white rounded-lg transition-colors"
+          >
+            {isAdding ? <X size={20} /> : <Plus size={20} />}
+          </button>
+        </div>
+      </div>
+
+      <div className="flex p-1 bg-slate-900 rounded-lg border border-slate-800 w-fit mb-6 overflow-x-auto max-w-full">
+        {LOCATIONS.map((loc) => (
+          <button
+            key={loc}
+            onClick={() => setLocationFilter(loc)}
+            className={clsx(
+              'px-4 py-2 rounded-md text-sm font-medium transition-all shrink-0',
+              locationFilter === loc ? 'bg-slate-800 text-sky-400 shadow-sm' : 'text-slate-400 hover:text-slate-200'
+            )}
+          >
+            {loc}
+          </button>
+        ))}
+      </div>
+
+      <AnimatePresence>
+        {isAdding && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="overflow-hidden mb-6"
+          >
+            <div className="p-4 bg-slate-800/50 rounded-xl border border-slate-700 space-y-3">
+              <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                Add Items (Comma or New Line separated)
+              </label>
+              <textarea
+                value={bulkInput}
+                onChange={(e) => setBulkInput(e.target.value)}
+                placeholder="Milk, Eggs, Chicken Breast..."
+                className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-slate-200 focus:outline-none focus:ring-2 focus:ring-sky-500 h-24 resize-none"
+              />
+              <div className="flex items-center space-x-3">
+                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider shrink-0">Location</label>
+                <select
+                  value={bulkLocation}
+                  onChange={(e) => setBulkLocation(e.target.value)}
+                  className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-sky-500"
+                >
+                  {LOCATIONS.filter((l) => l !== 'All').map((l) => (
+                    <option key={l} value={l}>{l}</option>
+                  ))}
+                </select>
+              </div>
+              <button
+                onClick={handleBulkSubmit}
+                disabled={!bulkInput.trim()}
+                className="w-full py-2 bg-sky-600 hover:bg-sky-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-lg transition-colors"
+              >
+                Add to Inventory
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-6">
+        {Object.keys(groupedItems).length === 0 ? (
+          <div className="text-center py-20 border-2 border-dashed border-slate-800 rounded-2xl">
+            <p className="text-slate-500 italic">No items in inventory yet.</p>
+          </div>
+        ) : (
+          Object.entries(groupedItems).map(([category, catItems]) => (
+            <div key={category} className="space-y-3">
+              <h3 className="text-xs font-black text-slate-500 uppercase tracking-[0.2em] px-2 flex items-center">
+                <span className="w-1.5 h-1.5 rounded-full bg-sky-500 mr-2"></span>
+                {category}
+              </h3>
+              <div className="space-y-2">
+                {catItems.map((item) => {
+                  const days = daysUntil(item.expirationDate);
+                  return (
+                    <motion.div
+                      key={item.id}
+                      layout
+                      initial={{ opacity: 0, x: -10 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      className="group relative bg-slate-800/30 border border-slate-800/50 rounded-xl p-3 transition-all hover:border-slate-700"
+                    >
+                      {editingId === item.id ? (
+                        <div className="space-y-3 p-1">
+                          <input
+                            type="text"
+                            value={editForm.name}
+                            onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                            className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm text-slate-100"
+                            placeholder="Item Name"
+                          />
+                          <div className="grid grid-cols-3 gap-2">
+                            <div className="space-y-1">
+                              <label className="text-[10px] text-slate-500 font-bold uppercase">Qty</label>
+                              <input
+                                type="number"
+                                value={editForm.quantity ?? 1}
+                                onChange={(e) => setEditForm({ ...editForm, quantity: Number(e.target.value) })}
+                                className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm text-slate-100"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[10px] text-slate-500 font-bold uppercase">Category</label>
+                              <input
+                                type="text"
+                                value={editForm.category || ''}
+                                onChange={(e) => setEditForm({ ...editForm, category: e.target.value })}
+                                className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm text-slate-100"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[10px] text-slate-500 font-bold uppercase">Location</label>
+                              <select
+                                value={editForm.location || 'Pantry'}
+                                onChange={(e) => setEditForm({ ...editForm, location: e.target.value })}
+                                className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm text-slate-100"
+                              >
+                                {LOCATIONS.filter((l) => l !== 'All').map((l) => (
+                                  <option key={l} value={l}>{l}</option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[10px] text-slate-500 font-bold uppercase">Expiration Date</label>
+                            <input
+                              type="date"
+                              value={editForm.expirationDate ? new Date(editForm.expirationDate).toISOString().split('T')[0] : ''}
+                              onChange={(e) => setEditForm({ ...editForm, expirationDate: e.target.value })}
+                              className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm text-slate-100"
+                            />
+                          </div>
+                          <div className="flex space-x-2 pt-1">
+                            <button onClick={handleUpdate} className="flex-1 py-1.5 bg-sky-600 text-white text-xs font-bold rounded">Save</button>
+                            <button onClick={() => setEditingId(null)} className="flex-1 py-1.5 bg-slate-700 text-white text-xs font-bold rounded">Cancel</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-3 flex-1 min-w-0">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center flex-wrap gap-1.5">
+                                <span className="font-medium text-slate-200 truncate">{item.name}</span>
+                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">
+                                  {item.location}
+                                </span>
+                                {days !== null && days <= 3 && (
+                                  <AlertTriangle size={12} className="text-amber-400 shrink-0" />
+                                )}
+                                <ExpirationBadge expirationDate={item.expirationDate} />
+                              </div>
+                              <p className="text-xs text-slate-500 mt-0.5">
+                                Purchased {new Date(item.purchaseDate).toLocaleDateString()}
+                                {item.notes && <span> · {item.notes}</span>}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center space-x-1 shrink-0 ml-2">
+                            <div className="flex items-center bg-slate-900 border border-slate-700 rounded-lg overflow-hidden">
+                              <button
+                                onClick={() => handleAdjustQuantity(item, -1)}
+                                className="px-2 py-1.5 text-slate-400 hover:text-red-400 hover:bg-slate-800"
+                              >
+                                <Minus size={14} />
+                              </button>
+                              <span className="px-2 text-sm font-bold text-slate-200 min-w-[2rem] text-center">
+                                {item.quantity}{item.unit ? ` ${item.unit}` : ''}
+                              </span>
+                              <button
+                                onClick={() => handleAdjustQuantity(item, 1)}
+                                className="px-2 py-1.5 text-slate-400 hover:text-sky-400 hover:bg-slate-800"
+                              >
+                                <Plus size={14} />
+                              </button>
+                            </div>
+                            <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button
+                                onClick={() => handleEdit(item)}
+                                className="p-1.5 text-slate-500 hover:text-sky-400 rounded-lg hover:bg-slate-800"
+                              >
+                                <Edit2 size={14} />
+                              </button>
+                              <button
+                                onClick={() => handleDelete(item.id)}
+                                className="p-1.5 text-slate-500 hover:text-red-400 rounded-lg hover:bg-slate-800"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </motion.div>
+                  );
+                })}
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      {showScanner && (
+        <ReceiptScanModal
+          onClose={() => setShowScanner(false)}
+          onImported={() => {
+            setShowScanner(false);
+            fetchItems();
+          }}
+        />
+      )}
+    </div>
+  );
+};
+
+export default Inventory;

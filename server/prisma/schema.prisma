@@ -111,3 +111,18 @@ model ItemCategoryPreference {
   itemName String @unique
   category String
 }
+
+model FoodItem {
+  id              String    @id @default(uuid())
+  name            String
+  quantity        Float     @default(1)
+  unit            String?
+  category        String    @default("General")
+  location        String    @default("Pantry") // Pantry, Fridge, Freezer
+  purchaseDate    DateTime  @default(now())
+  expirationDate  DateTime?
+  notes           String?
+  lowStock        Boolean   @default(false)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}

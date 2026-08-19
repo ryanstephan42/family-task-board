@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { authenticateToken, AuthRequest } from '../auth';
+import { resolveCategory, suggestExpirationDate } from '../categorize';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -28,12 +29,13 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const createdItems = await Promise.all(
       items.map(async (item: any) => {
+        const category = await resolveCategory(prisma, item.name, item.category);
         return prisma.groceryItem.create({
           data: {
             name: item.name,
             quantity: item.quantity || null,
             details: item.details || null,
-            category: item.category || null,
+            category,
           },
         });
       })
@@ -86,6 +88,40 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
     res.json({ message: 'Grocery item deleted' });
   } catch (error) {
     res.status(400).json({ error: 'Failed to delete grocery item' });
+  }
+});
+
+// Mark a grocery item as purchased: move it into the food inventory
+// (stamping today as the purchase date) and remove it from the list.
+router.post('/:id/purchase', authenticateToken, async (req: AuthRequest, res: Response) => {
+  const id = req.params.id as string;
+  const { location } = req.body || {};
+
+  try {
+    const groceryItem = await prisma.groceryItem.findUnique({ where: { id } });
+    if (!groceryItem) return res.status(404).json({ error: 'Grocery item not found' });
+
+    const category = await resolveCategory(prisma, groceryItem.name, groceryItem.category);
+    const purchaseDate = new Date();
+    const foodItem = await prisma.foodItem.create({
+      data: {
+        name: groceryItem.name,
+        quantity: 1,
+        unit: groceryItem.quantity || null,
+        category,
+        location: location || 'Pantry',
+        purchaseDate,
+        expirationDate: suggestExpirationDate(category, purchaseDate),
+        notes: groceryItem.details || null,
+      },
+    });
+
+    await prisma.groceryItem.delete({ where: { id } });
+
+    res.status(201).json(foodItem);
+  } catch (error) {
+    console.error(error);
+    res.status(400).json({ error: 'Failed to move item to inventory' });
   }
 });
 

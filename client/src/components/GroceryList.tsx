@@ -6,7 +6,8 @@ import {
   Edit2, 
   Check, 
   ShoppingCart, 
-  X
+  X,
+  PackagePlus
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { clsx } from 'clsx';
@@ -111,6 +112,15 @@ const GroceryList = () => {
     if (!confirm('Delete this item?')) return;
     try {
       await api.delete(`/grocery/${id}`);
+      fetchItems();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleMoveToInventory = async (id: string) => {
+    try {
+      await api.post(`/grocery/${id}/purchase`);
       fetchItems();
     } catch (err) {
       console.error(err);
@@ -330,6 +340,15 @@ const GroceryList = () => {
                           </div>
                         </div>
                         <div className="flex items-center space-x-1 ml-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          {item.completed && (
+                            <button
+                              onClick={() => handleMoveToInventory(item.id)}
+                              className="p-1.5 text-slate-500 hover:text-emerald-400 rounded-lg hover:bg-slate-800"
+                              title="Move to Inventory"
+                            >
+                              <PackagePlus size={14} />
+                            </button>
+                          )}
                           <button
                             onClick={() => handleEdit(item)}
                             className="p-1.5 text-slate-500 hover:text-sky-400 rounded-lg hover:bg-slate-800"
