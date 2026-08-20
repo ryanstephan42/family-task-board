@@ -130,6 +130,20 @@ model BarcodeProductPreference {
   unit     String?
 }
 
+// Manual override linking a Mealie recipe ingredient name to a specific
+// inventory item name, for cases where auto-fuzzy-matching misses (e.g.
+// "AP flour" in Mealie vs "flour" in inventory). Keyed per recipe so the
+// same ingredient text can map differently across different recipes.
+model MealieIngredientLink {
+  id                 String   @id @default(uuid())
+  recipeSlug         String
+  ingredientName     String
+  inventoryItemName  String
+  createdAt          DateTime @default(now())
+
+  @@unique([recipeSlug, ingredientName])
+}
+
 model FoodItem {
   id              String    @id @default(uuid())
   name            String

@@ -6,9 +6,10 @@ import TaskModal from '../components/TaskModal';
 import Calendar from '../components/Calendar';
 import GroceryList from '../components/GroceryList';
 import Inventory from '../components/Inventory';
+import Meals from '../components/Meals';
 import { clsx } from 'clsx';
 import { AnimatePresence } from 'framer-motion';
-import { ShoppingCart } from 'lucide-react';
+import { ShoppingCart, ChefHat } from 'lucide-react';
 
 interface DashboardProps {
   user: any;
@@ -33,7 +34,7 @@ const Dashboard = ({ user }: DashboardProps) => {
   };
 
   const fetchTasks = async () => {
-    if (mainTab === 'CALENDAR' || activeTab === 'GROCERY' || activeTab === 'INVENTORY') return;
+    if (mainTab === 'CALENDAR' || activeTab === 'GROCERY' || activeTab === 'INVENTORY' || activeTab === 'MEALS') return;
     setLoading(true);
     try {
       let endpoint = '';
@@ -65,6 +66,7 @@ const Dashboard = ({ user }: DashboardProps) => {
     { id: 'CHORE', label: 'Chore Board', icon: ClipboardList },
     { id: 'GROCERY', label: 'Grocery List', icon: ShoppingCart },
     { id: 'INVENTORY', label: 'Inventory', icon: Package },
+    { id: 'MEALS', label: 'Meals', icon: ChefHat },
     { id: 'PRIVATE', label: 'Private Tasks', icon: Lock },
     { id: 'ARCHIVE', label: 'Archive', icon: Archive },
   ];
@@ -163,7 +165,7 @@ const Dashboard = ({ user }: DashboardProps) => {
               ))}
             </div>
             
-            {activeTab !== 'GROCERY' && activeTab !== 'INVENTORY' && (
+            {activeTab !== 'GROCERY' && activeTab !== 'INVENTORY' && activeTab !== 'MEALS' && (
               <button 
                 onClick={() => setShowModal(true)}
                 className="flex items-center space-x-2 bg-sky-600 hover:bg-sky-500 text-white px-6 py-2.5 rounded-lg font-semibold transition-colors shadow-lg shadow-sky-900/20"
@@ -178,7 +180,7 @@ const Dashboard = ({ user }: DashboardProps) => {
 
       {mainTab === 'CALENDAR' ? (
         <Calendar />
-      ) : loading && activeTab !== 'GROCERY' && activeTab !== 'INVENTORY' ? (
+      ) : loading && activeTab !== 'GROCERY' && activeTab !== 'INVENTORY' && activeTab !== 'MEALS' ? (
         <div className="flex justify-center py-20">
           <RefreshCw className="animate-spin text-sky-500" size={32} />
         </div>
@@ -186,6 +188,8 @@ const Dashboard = ({ user }: DashboardProps) => {
         <GroceryList />
       ) : activeTab === 'INVENTORY' ? (
         <Inventory />
+      ) : activeTab === 'MEALS' ? (
+        <Meals />
       ) : activeTab === 'FAMILY' ? (
         renderFamilyBoard()
       ) : tasks.length > 0 ? (
