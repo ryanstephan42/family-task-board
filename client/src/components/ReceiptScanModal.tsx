@@ -15,7 +15,7 @@ interface ReviewItem {
   price?: number;
 }
 
-const LOCATIONS = ['Pantry', 'Fridge', 'Freezer'];
+const LOCATIONS = ['Pantry', 'Fridge', 'Freezer', 'Deep Freezer', 'Kitchen Shelf'];
 
 const ReceiptScanModal = ({ onClose, onImported }: ReceiptScanModalProps) => {
   const fileInputRef = useRef<HTMLInputElement>(null);

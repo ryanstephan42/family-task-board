@@ -35,7 +35,7 @@ interface FoodItem {
   lowStock: boolean;
 }
 
-const LOCATIONS = ['All', 'Fridge', 'Freezer', 'Pantry'];
+const LOCATIONS = ['All', 'Fridge', 'Freezer', 'Deep Freezer', 'Pantry', 'Kitchen Shelf'];
 
 const daysUntil = (dateStr: string | null) => {
   if (!dateStr) return null;
