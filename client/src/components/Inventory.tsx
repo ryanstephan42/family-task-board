@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import api, { resolveUploadUrl } from '../services/api';
 import {
   Plus,
@@ -13,6 +13,8 @@ import {
   ImageOff,
   Barcode,
   TrendingDown,
+  Search,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { clsx } from 'clsx';
@@ -79,6 +81,10 @@ const Inventory = () => {
   const [showScanner, setShowScanner] = useState(false);
   const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
   const [lowStockOnly, setLowStockOnly] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('All');
+  const [expirationFilter, setExpirationFilter] = useState<'All' | 'Expiring Soon' | 'Expired'>('All');
+  const [showFilters, setShowFilters] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<Partial<FoodItem>>({});
   const [unitOptions, setUnitOptions] = useState<string[]>([]);
@@ -199,11 +205,36 @@ const Inventory = () => {
     }
   };
 
-  const filteredItems = (locationFilter === 'All' ? items : items.filter((i) => i.location === locationFilter)).filter(
-    (i) => !lowStockOnly || i.lowStock
-  );
+  const filteredItems = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    return items
+      .filter((i) => locationFilter === 'All' || i.location === locationFilter)
+      .filter((i) => !lowStockOnly || i.lowStock)
+      .filter((i) => categoryFilter === 'All' || (i.category || 'General') === categoryFilter)
+      .filter((i) => {
+        if (expirationFilter === 'All') return true;
+        const days = daysUntil(i.expirationDate);
+        if (!i.trackExpiration || days === null) return false;
+        if (expirationFilter === 'Expired') return days < 0;
+        // "Expiring Soon" = within 2 weeks (matches the yellow/red badge thresholds)
+        return days >= 0 && days <= 14;
+      })
+      .filter((i) => {
+        if (!query) return true;
+        const haystack = `${i.name} ${i.category} ${i.location} ${i.notes || ''}`.toLowerCase();
+        return haystack.includes(query);
+      });
+  }, [items, locationFilter, lowStockOnly, categoryFilter, expirationFilter, searchQuery]);
 
   const lowStockCount = items.filter((i) => i.lowStock).length;
+  const categories = useMemo(
+    () => Array.from(new Set(items.map((i) => i.category || 'General'))).sort(),
+    [items]
+  );
+  const activeFilterCount = [
+    categoryFilter !== 'All',
+    expirationFilter !== 'All',
+  ].filter(Boolean).length;
 
   const groupedItems = filteredItems.reduce((acc, item) => {
     const cat = item.category || 'General';
@@ -266,6 +297,94 @@ const Inventory = () => {
         </button>
       )}
 
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <div className="relative flex-1 min-w-[180px]">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search items, categories, notes..."
+            className="w-full bg-slate-900 border border-slate-700 rounded-lg pl-9 pr-8 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-sky-500"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-200"
+            >
+              <X size={14} />
+            </button>
+          )}
+        </div>
+        <button
+          onClick={() => setShowFilters((v) => !v)}
+          className={clsx(
+            'flex items-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-bold shrink-0 transition-colors',
+            showFilters || activeFilterCount > 0
+              ? 'bg-sky-500/15 border-sky-500/40 text-sky-300'
+              : 'bg-slate-900 border-slate-700 text-slate-400 hover:text-slate-200'
+          )}
+        >
+          <SlidersHorizontal size={14} />
+          Filters
+          {activeFilterCount > 0 && (
+            <span className="bg-sky-500 text-white rounded-full w-4 h-4 text-[10px] flex items-center justify-center">
+              {activeFilterCount}
+            </span>
+          )}
+        </button>
+      </div>
+
+      <AnimatePresence>
+        {showFilters && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="overflow-hidden mb-4"
+          >
+            <div className="flex flex-wrap items-end gap-3 p-3 bg-slate-800/40 border border-slate-700/60 rounded-xl">
+              <div className="space-y-1">
+                <label className="text-[10px] text-slate-500 font-bold uppercase">Category</label>
+                <select
+                  value={categoryFilter}
+                  onChange={(e) => setCategoryFilter(e.target.value)}
+                  className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-200"
+                >
+                  <option value="All">All</option>
+                  {categories.map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] text-slate-500 font-bold uppercase">Expiration</label>
+                <select
+                  value={expirationFilter}
+                  onChange={(e) => setExpirationFilter(e.target.value as typeof expirationFilter)}
+                  className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-200"
+                >
+                  <option value="All">All</option>
+                  <option value="Expiring Soon">Expiring Soon (≤14 days)</option>
+                  <option value="Expired">Expired</option>
+                </select>
+              </div>
+              {activeFilterCount > 0 && (
+                <button
+                  onClick={() => {
+                    setCategoryFilter('All');
+                    setExpirationFilter('All');
+                  }}
+                  className="px-3 py-1.5 text-xs font-bold text-slate-400 hover:text-slate-200"
+                >
+                  Clear filters
+                </button>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <div className="flex p-1 bg-slate-900 rounded-lg border border-slate-800 w-fit mb-6 overflow-x-auto max-w-full">
         {LOCATIONS.map((loc) => (
           <button
@@ -326,7 +445,9 @@ const Inventory = () => {
       <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-6">
         {Object.keys(groupedItems).length === 0 ? (
           <div className="text-center py-20 border-2 border-dashed border-slate-800 rounded-2xl">
-            <p className="text-slate-500 italic">No items in inventory yet.</p>
+            <p className="text-slate-500 italic">
+              {items.length === 0 ? 'No items in inventory yet.' : 'No items match your search/filters.'}
+            </p>
           </div>
         ) : (
           Object.entries(groupedItems).map(([category, catItems]) => (
