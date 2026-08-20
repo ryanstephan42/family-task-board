@@ -111,3 +111,56 @@ model ItemCategoryPreference {
   itemName String @unique
   category String
 }
+
+model ItemUnitPreference {
+  id       String @id @default(uuid())
+  itemName String @unique
+  unit     String
+}
+
+// Remembers what a scanned barcode corresponds to (name/category/unit) so a
+// second scan of the same product - even if the original item was long since
+// used up and removed from inventory - is instant and doesn't need another
+// lookup against the external product database.
+model BarcodeProductPreference {
+  id       String  @id @default(uuid())
+  barcode  String  @unique
+  name     String
+  category String?
+  unit     String?
+}
+
+// Manual override linking a Mealie recipe ingredient name to a specific
+// inventory item name, for cases where auto-fuzzy-matching misses (e.g.
+// "AP flour" in Mealie vs "flour" in inventory). Keyed per recipe so the
+// same ingredient text can map differently across different recipes.
+model MealieIngredientLink {
+  id                 String   @id @default(uuid())
+  recipeSlug         String
+  ingredientName     String
+  inventoryItemName  String
+  createdAt          DateTime @default(now())
+
+  @@unique([recipeSlug, ingredientName])
+}
+
+model FoodItem {
+  id              String    @id @default(uuid())
+  name            String
+  quantity        Float     @default(1)
+  unit            String?
+  category        String    @default("General")
+  location        String    @default("Pantry") // Pantry, Fridge, Freezer
+  purchaseDate    DateTime  @default(now())
+  trackExpiration Boolean   @default(true)
+  expirationDate  DateTime?
+  notes           String?
+  barcode         String?
+  // When set, the item is considered "low stock" whenever quantity drops to
+  // or below this threshold (e.g. "always keep at least 2 boxes of pasta").
+  parLevel        Float?
+  lowStock        Boolean   @default(false)
+  photoUrl        String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}

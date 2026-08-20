@@ -6,19 +6,29 @@ import userRoutes from './routes/users';
 import taskRoutes from './routes/tasks';
 import eventRoutes from './routes/events';
 import groceryRoutes from './routes/grocery';
+import inventoryRoutes from './routes/inventory';
+import receiptRoutes from './routes/receipt';
+import mealsRoutes from './routes/meals';
+import { UPLOADS_DIR, ensureUploadsDir } from './uploads';
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+ensureUploadsDir();
+
 app.use(cors());
 app.use(express.json());
 
+app.use('/uploads', express.static(UPLOADS_DIR));
 app.use('/api/users', userRoutes);
 app.use('/api/tasks', taskRoutes);
 app.use('/api/events', eventRoutes);
 app.use('/api/grocery', groceryRoutes);
+app.use('/api/inventory', inventoryRoutes);
+app.use('/api/receipt', receiptRoutes);
+app.use('/api/meals', mealsRoutes);
 
 // Serve static files from the React app
 app.use(express.static(path.join(__dirname, '../../client/dist')));

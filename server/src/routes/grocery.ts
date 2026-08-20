@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { authenticateToken, AuthRequest } from '../auth';
+import { resolveCategory, resolveUnit, suggestExpirationDate } from '../categorize';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -28,12 +29,13 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const createdItems = await Promise.all(
       items.map(async (item: any) => {
+        const category = await resolveCategory(prisma, item.name, item.category);
         return prisma.groceryItem.create({
           data: {
             name: item.name,
             quantity: item.quantity || null,
             details: item.details || null,
-            category: item.category || null,
+            category,
           },
         });
       })
@@ -86,6 +88,72 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
     res.json({ message: 'Grocery item deleted' });
   } catch (error) {
     res.status(400).json({ error: 'Failed to delete grocery item' });
+  }
+});
+
+// Mark a grocery item as purchased: move it into the food inventory
+// (stamping today as the purchase date) and remove it from the list.
+router.post('/:id/purchase', authenticateToken, async (req: AuthRequest, res: Response) => {
+  const id = req.params.id as string;
+  const { location } = req.body || {};
+
+  try {
+    const groceryItem = await prisma.groceryItem.findUnique({ where: { id } });
+    if (!groceryItem) return res.status(404).json({ error: 'Grocery item not found' });
+
+    const category = await resolveCategory(prisma, groceryItem.name, groceryItem.category);
+    const unit = await resolveUnit(prisma, groceryItem.name, undefined, category);
+    const purchaseDate = new Date();
+    const foodItem = await prisma.foodItem.create({
+      data: {
+        name: groceryItem.name,
+        quantity: 1,
+        unit,
+        category,
+        location: location || 'Pantry',
+        purchaseDate,
+        expirationDate: suggestExpirationDate(category, purchaseDate),
+        notes: groceryItem.details || groceryItem.quantity || null,
+      },
+    });
+
+    await prisma.groceryItem.delete({ where: { id } });
+
+    res.status(201).json(foodItem);
+  } catch (error) {
+    console.error(error);
+    res.status(400).json({ error: 'Failed to move item to inventory' });
+  }
+});
+
+// Suggest grocery-list additions based on items currently running low in
+// inventory (at/below their par level). Purely a read - the client decides
+// which suggestions to actually add to the list.
+router.get('/suggestions', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const lowItems = await prisma.foodItem.findMany({
+      where: { OR: [{ lowStock: true }, { parLevel: { not: null } } ] },
+    });
+    const existingGroceryNames = new Set(
+      (await prisma.groceryItem.findMany({ where: { completed: false } })).map((g) =>
+        g.name.toLowerCase().trim()
+      )
+    );
+
+    const suggestions = lowItems
+      .filter((i) => i.lowStock || (i.parLevel !== null && i.quantity <= i.parLevel))
+      .filter((i) => !existingGroceryNames.has(i.name.toLowerCase().trim()))
+      .map((i) => ({
+        name: i.name,
+        category: i.category,
+        quantity: i.unit ? `${i.parLevel ?? 1} ${i.unit}` : undefined,
+        reason: `Running low (${i.quantity}${i.unit ? ` ${i.unit}` : ''} left, par ${i.parLevel})`,
+      }));
+
+    res.json(suggestions);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Failed to fetch suggestions' });
   }
 });
 

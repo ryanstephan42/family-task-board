@@ -6,7 +6,9 @@ import {
   Edit2, 
   Check, 
   ShoppingCart, 
-  X
+  X,
+  PackagePlus,
+  TrendingDown,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { clsx } from 'clsx';
@@ -25,9 +27,18 @@ interface Preference {
   category: string;
 }
 
+interface Suggestion {
+  name: string;
+  category: string | null;
+  quantity?: string;
+  reason: string;
+}
+
 const GroceryList = () => {
   const [items, setItems] = useState<GroceryItem[]>([]);
   const [preferences, setPreferences] = useState<Preference[]>([]);
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const [dismissedSuggestions, setDismissedSuggestions] = useState<string[]>([]);
   const [bulkInput, setBulkInput] = useState('');
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -52,10 +63,32 @@ const GroceryList = () => {
     }
   };
 
+  const fetchSuggestions = async () => {
+    try {
+      const res = await api.get('/grocery/suggestions');
+      setSuggestions(res.data);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   useEffect(() => {
     fetchItems();
     fetchPreferences();
+    fetchSuggestions();
   }, []);
+
+  const handleAddSuggestion = async (s: Suggestion) => {
+    try {
+      await api.post('/grocery', { items: [{ name: s.name, category: s.category, quantity: s.quantity || '' }] });
+      setDismissedSuggestions((prev) => [...prev, s.name]);
+      fetchItems();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const visibleSuggestions = suggestions.filter((s) => !dismissedSuggestions.includes(s.name));
 
   const handleBulkSubmit = async () => {
     if (!bulkInput.trim()) return;
@@ -111,6 +144,15 @@ const GroceryList = () => {
     if (!confirm('Delete this item?')) return;
     try {
       await api.delete(`/grocery/${id}`);
+      fetchItems();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleMoveToInventory = async (id: string) => {
+    try {
+      await api.post(`/grocery/${id}/purchase`);
       fetchItems();
     } catch (err) {
       console.error(err);
@@ -180,6 +222,28 @@ const GroceryList = () => {
           </button>
         </div>
       </div>
+
+      {visibleSuggestions.length > 0 && (
+        <div className="mb-6 p-4 bg-amber-500/5 border border-amber-500/20 rounded-xl space-y-2">
+          <h3 className="text-xs font-black text-amber-400 uppercase tracking-wider flex items-center">
+            <TrendingDown size={14} className="mr-1.5" />
+            Running Low - Add to List?
+          </h3>
+          <div className="flex flex-wrap gap-2">
+            {visibleSuggestions.map((s) => (
+              <button
+                key={s.name}
+                onClick={() => handleAddSuggestion(s)}
+                title={s.reason}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-amber-500/10 border border-slate-700 hover:border-amber-500/40 rounded-lg text-xs font-medium text-slate-300 hover:text-amber-300 transition-colors"
+              >
+                <Plus size={12} />
+                {s.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <AnimatePresence>
         {isAdding && (
@@ -330,6 +394,15 @@ const GroceryList = () => {
                           </div>
                         </div>
                         <div className="flex items-center space-x-1 ml-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          {item.completed && (
+                            <button
+                              onClick={() => handleMoveToInventory(item.id)}
+                              className="p-1.5 text-slate-500 hover:text-emerald-400 rounded-lg hover:bg-slate-800"
+                              title="Move to Inventory"
+                            >
+                              <PackagePlus size={14} />
+                            </button>
+                          )}
                           <button
                             onClick={() => handleEdit(item)}
                             className="p-1.5 text-slate-500 hover:text-sky-400 rounded-lg hover:bg-slate-800"
