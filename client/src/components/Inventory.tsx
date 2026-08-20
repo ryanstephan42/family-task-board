@@ -11,10 +11,13 @@ import {
   AlertTriangle,
   ImagePlus,
   ImageOff,
+  Barcode,
+  TrendingDown,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { clsx } from 'clsx';
 import ReceiptScanModal from './ReceiptScanModal';
+import BarcodeScannerModal from './BarcodeScannerModal';
 
 interface FoodItem {
   id: string;
@@ -28,6 +31,8 @@ interface FoodItem {
   expirationDate: string | null;
   notes: string | null;
   photoUrl: string | null;
+  parLevel: number | null;
+  lowStock: boolean;
 }
 
 const LOCATIONS = ['All', 'Fridge', 'Freezer', 'Pantry'];
@@ -38,6 +43,8 @@ const daysUntil = (dateStr: string | null) => {
   return Math.round(diffMs / (1000 * 60 * 60 * 24));
 };
 
+// Color-coded expiration urgency: red = expired/within 3 days,
+// yellow = within 2 weeks, otherwise a neutral badge.
 const ExpirationBadge = ({ expirationDate }: { expirationDate: string | null }) => {
   const days = daysUntil(expirationDate);
   if (days === null) return null;
@@ -51,6 +58,8 @@ const ExpirationBadge = ({ expirationDate }: { expirationDate: string | null }) 
     classes = 'bg-red-500/10 text-red-400 border-red-500/30';
     label = 'Today';
   } else if (days <= 3) {
+    classes = 'bg-red-500/10 text-red-400 border-red-500/30';
+  } else if (days <= 14) {
     classes = 'bg-amber-500/10 text-amber-400 border-amber-500/30';
   }
 
@@ -68,6 +77,8 @@ const Inventory = () => {
   const [bulkLocation, setBulkLocation] = useState('Pantry');
   const [isAdding, setIsAdding] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
+  const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
+  const [lowStockOnly, setLowStockOnly] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<Partial<FoodItem>>({});
   const [unitOptions, setUnitOptions] = useState<string[]>([]);
@@ -177,7 +188,22 @@ const Inventory = () => {
     }
   };
 
-  const filteredItems = locationFilter === 'All' ? items : items.filter((i) => i.location === locationFilter);
+  const handleBarcodeConfirm = async (item: { name: string; category?: string; unit?: string; barcode: string }) => {
+    try {
+      await api.post('/inventory', { items: [{ ...item, location: bulkLocation }] });
+      setShowBarcodeScanner(false);
+      fetchItems();
+      fetchUnitOptions();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const filteredItems = (locationFilter === 'All' ? items : items.filter((i) => i.location === locationFilter)).filter(
+    (i) => !lowStockOnly || i.lowStock
+  );
+
+  const lowStockCount = items.filter((i) => i.lowStock).length;
 
   const groupedItems = filteredItems.reduce((acc, item) => {
     const cat = item.category || 'General';
@@ -200,6 +226,14 @@ const Inventory = () => {
         </h2>
         <div className="flex items-center space-x-2">
           <button
+            onClick={() => setShowBarcodeScanner(true)}
+            className="px-3 py-2 bg-slate-800 hover:bg-sky-600 text-slate-300 hover:text-white rounded-lg transition-all text-xs font-bold flex items-center"
+            title="Scan Barcode"
+          >
+            <Barcode size={16} className="mr-1.5" />
+            Scan Barcode
+          </button>
+          <button
             onClick={() => setShowScanner(true)}
             className="px-3 py-2 bg-slate-800 hover:bg-sky-600 text-slate-300 hover:text-white rounded-lg transition-all text-xs font-bold flex items-center"
             title="Scan Receipt"
@@ -215,6 +249,22 @@ const Inventory = () => {
           </button>
         </div>
       </div>
+
+      {lowStockCount > 0 && (
+        <button
+          onClick={() => setLowStockOnly((v) => !v)}
+          className={clsx(
+            'mb-4 flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-bold w-fit transition-colors',
+            lowStockOnly
+              ? 'bg-amber-500/15 border-amber-500/40 text-amber-300'
+              : 'bg-slate-900 border-slate-800 text-amber-400 hover:border-amber-500/40'
+          )}
+        >
+          <TrendingDown size={14} />
+          {lowStockCount} item{lowStockCount === 1 ? '' : 's'} running low
+          {lowStockOnly ? ' · showing only these' : ' · tap to filter'}
+        </button>
+      )}
 
       <div className="flex p-1 bg-slate-900 rounded-lg border border-slate-800 w-fit mb-6 overflow-x-auto max-w-full">
         {LOCATIONS.map((loc) => (
@@ -382,6 +432,20 @@ const Inventory = () => {
                               </select>
                             </div>
                           </div>
+                          <div className="space-y-1">
+                            <label className="text-[10px] text-slate-500 font-bold uppercase">
+                              Par Level (low-stock alert when qty drops to/below this)
+                            </label>
+                            <input
+                              type="number"
+                              value={editForm.parLevel ?? ''}
+                              onChange={(e) =>
+                                setEditForm({ ...editForm, parLevel: e.target.value === '' ? null : Number(e.target.value) })
+                              }
+                              placeholder="e.g. 2 (leave blank to disable)"
+                              className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm text-slate-100"
+                            />
+                          </div>
                           <div className="flex items-center justify-between bg-slate-900 border border-slate-700 rounded px-2 py-1.5">
                             <label className="text-[10px] text-slate-400 font-bold uppercase">Track Expiration</label>
                             <button
@@ -436,6 +500,12 @@ const Inventory = () => {
                                 <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">
                                   {item.location}
                                 </span>
+                                {item.lowStock && (
+                                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/30 flex items-center gap-1">
+                                    <TrendingDown size={10} />
+                                    Low
+                                  </span>
+                                )}
                                 {item.trackExpiration && days !== null && days <= 3 && (
                                   <AlertTriangle size={12} className="text-amber-400 shrink-0" />
                                 )}
@@ -499,6 +569,10 @@ const Inventory = () => {
             fetchItems();
           }}
         />
+      )}
+
+      {showBarcodeScanner && (
+        <BarcodeScannerModal onClose={() => setShowBarcodeScanner(false)} onConfirm={handleBarcodeConfirm} />
       )}
     </div>
   );

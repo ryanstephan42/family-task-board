@@ -5,7 +5,8 @@ import fs from 'fs';
 import { randomUUID } from 'crypto';
 import multer from 'multer';
 import { authenticateToken, AuthRequest } from '../auth';
-import { resolveCategory, resolveUnit, rememberUnit, suggestExpirationDate, COMMON_UNITS } from '../categorize';
+import { resolveCategory, resolveUnit, rememberUnit, suggestExpirationDate, COMMON_UNITS, computeLowStock } from '../categorize';
+import { resolveBarcodeProduct, rememberBarcodeProduct } from '../barcodeLookup';
 import { UPLOADS_DIR, ensureUploadsDir } from '../uploads';
 
 const router = Router();
@@ -52,6 +53,37 @@ router.get('/unit-options', authenticateToken, async (req: AuthRequest, res: Res
   }
 });
 
+// Items that are at/below their configured par level (or otherwise flagged
+// low stock), used for the "Running Low" view and grocery-list suggestions.
+router.get('/low-stock', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const items = await prisma.foodItem.findMany({
+      where: { OR: [{ lowStock: true }, { parLevel: { not: null } }] },
+      orderBy: { name: 'asc' },
+    });
+    const lowItems = items.filter((i) => i.lowStock || computeLowStock(i.quantity, i.parLevel));
+    res.json(lowItems);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Failed to fetch low-stock items' });
+  }
+});
+
+// Look up a scanned barcode: household memory first, then the free Open
+// Food Facts product database. Does NOT create an inventory item - the
+// client reviews/edits the result and posts it like any other new item.
+router.get('/barcode/:code', authenticateToken, async (req: AuthRequest, res: Response) => {
+  const code = req.params.code as string;
+  try {
+    const product = await resolveBarcodeProduct(prisma, code);
+    if (!product) return res.status(404).json({ error: 'No product found for this barcode' });
+    res.json(product);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Barcode lookup failed' });
+  }
+});
+
 // Add items to inventory (bulk supported). purchaseDate is always
 // auto-stamped to "now" unless explicitly provided (e.g. receipt scan
 // with a known purchase date).
@@ -79,13 +111,21 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
         if (item.unit) {
           await rememberUnit(prisma, item.name, item.unit);
         }
+        if (item.barcode) {
+          await rememberBarcodeProduct(prisma, item.barcode, item.name, category, unit);
+        }
+
+        const quantity = item.quantity !== undefined && item.quantity !== null && item.quantity !== ''
+          ? Number(item.quantity)
+          : 1;
+        const parLevel = item.parLevel !== undefined && item.parLevel !== null && item.parLevel !== ''
+          ? Number(item.parLevel)
+          : null;
 
         return prisma.foodItem.create({
           data: {
             name: item.name,
-            quantity: item.quantity !== undefined && item.quantity !== null && item.quantity !== ''
-              ? Number(item.quantity)
-              : 1,
+            quantity,
             unit,
             category,
             location: item.location || 'Pantry',
@@ -93,6 +133,9 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
             trackExpiration,
             expirationDate,
             notes: item.notes || null,
+            barcode: item.barcode || null,
+            parLevel,
+            lowStock: computeLowStock(quantity, parLevel),
           },
         });
       })
@@ -107,7 +150,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 // Update an inventory item (quantity, unit, location, category, expiration toggle, etc.)
 router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   const id = req.params.id as string;
-  const { name, quantity, unit, category, location, purchaseDate, trackExpiration, expirationDate, notes, lowStock } = req.body;
+  const { name, quantity, unit, category, location, purchaseDate, trackExpiration, expirationDate, notes, parLevel } = req.body;
 
   try {
     const existing = await prisma.foodItem.findUnique({ where: { id } });
@@ -115,6 +158,8 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 
     const nextTrackExpiration = trackExpiration !== undefined ? Boolean(trackExpiration) : existing.trackExpiration;
     const nextCategory = category !== undefined ? category : existing.category;
+    const nextQuantity = quantity !== undefined ? Number(quantity) : existing.quantity;
+    const nextParLevel = parLevel !== undefined ? (parLevel === null || parLevel === '' ? null : Number(parLevel)) : existing.parLevel;
 
     let nextExpirationDate: Date | null | undefined = undefined;
     if (!nextTrackExpiration) {
@@ -131,7 +176,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       where: { id },
       data: {
         ...(name !== undefined ? { name } : {}),
-        ...(quantity !== undefined ? { quantity: Number(quantity) } : {}),
+        ...(quantity !== undefined ? { quantity: nextQuantity } : {}),
         ...(unit !== undefined ? { unit } : {}),
         ...(category !== undefined ? { category } : {}),
         ...(location !== undefined ? { location } : {}),
@@ -139,7 +184,8 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
         trackExpiration: nextTrackExpiration,
         ...(nextExpirationDate !== undefined ? { expirationDate: nextExpirationDate } : {}),
         ...(notes !== undefined ? { notes } : {}),
-        ...(lowStock !== undefined ? { lowStock } : {}),
+        ...(parLevel !== undefined ? { parLevel: nextParLevel } : {}),
+        lowStock: computeLowStock(nextQuantity, nextParLevel),
       },
     });
 
@@ -174,7 +220,7 @@ router.patch('/:id/quantity', authenticateToken, async (req: AuthRequest, res: R
     const newQuantity = Math.max(0, existing.quantity + Number(delta || 0));
     const item = await prisma.foodItem.update({
       where: { id },
-      data: { quantity: newQuantity },
+      data: { quantity: newQuantity, lowStock: computeLowStock(newQuantity, existing.parLevel) },
     });
     res.json(item);
   } catch (error) {

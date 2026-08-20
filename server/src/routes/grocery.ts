@@ -126,6 +126,37 @@ router.post('/:id/purchase', authenticateToken, async (req: AuthRequest, res: Re
   }
 });
 
+// Suggest grocery-list additions based on items currently running low in
+// inventory (at/below their par level). Purely a read - the client decides
+// which suggestions to actually add to the list.
+router.get('/suggestions', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const lowItems = await prisma.foodItem.findMany({
+      where: { OR: [{ lowStock: true }, { parLevel: { not: null } } ] },
+    });
+    const existingGroceryNames = new Set(
+      (await prisma.groceryItem.findMany({ where: { completed: false } })).map((g) =>
+        g.name.toLowerCase().trim()
+      )
+    );
+
+    const suggestions = lowItems
+      .filter((i) => i.lowStock || (i.parLevel !== null && i.quantity <= i.parLevel))
+      .filter((i) => !existingGroceryNames.has(i.name.toLowerCase().trim()))
+      .map((i) => ({
+        name: i.name,
+        category: i.category,
+        quantity: i.unit ? `${i.parLevel ?? 1} ${i.unit}` : undefined,
+        reason: `Running low (${i.quantity}${i.unit ? ` ${i.unit}` : ''} left, par ${i.parLevel})`,
+      }));
+
+    res.json(suggestions);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Failed to fetch suggestions' });
+  }
+});
+
 // Get category preferences
 router.get('/preferences', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {

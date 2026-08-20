@@ -118,6 +118,18 @@ model ItemUnitPreference {
   unit     String
 }
 
+// Remembers what a scanned barcode corresponds to (name/category/unit) so a
+// second scan of the same product - even if the original item was long since
+// used up and removed from inventory - is instant and doesn't need another
+// lookup against the external product database.
+model BarcodeProductPreference {
+  id       String  @id @default(uuid())
+  barcode  String  @unique
+  name     String
+  category String?
+  unit     String?
+}
+
 model FoodItem {
   id              String    @id @default(uuid())
   name            String
@@ -129,6 +141,10 @@ model FoodItem {
   trackExpiration Boolean   @default(true)
   expirationDate  DateTime?
   notes           String?
+  barcode         String?
+  // When set, the item is considered "low stock" whenever quantity drops to
+  // or below this threshold (e.g. "always keep at least 2 boxes of pasta").
+  parLevel        Float?
   lowStock        Boolean   @default(false)
   photoUrl        String?
   createdAt       DateTime  @default(now())

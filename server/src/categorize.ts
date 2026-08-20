@@ -203,3 +203,35 @@ export async function rememberUnit(prisma: PrismaClient, name: string, unit: str
     create: { itemName: name.toLowerCase().trim(), unit },
   });
 }
+
+/** Whether an item's quantity has dropped to/below its configured par level. */
+export function computeLowStock(quantity: number, parLevel: number | null | undefined): boolean {
+  if (parLevel === null || parLevel === undefined) return false;
+  return quantity <= parLevel;
+}
+
+/**
+ * Days remaining until expiration (negative = already expired), or null if
+ * there's no date to compare against.
+ */
+export function daysUntil(date: Date | null | undefined): number | null {
+  if (!date) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const target = new Date(date);
+  target.setHours(0, 0, 0, 0);
+  return Math.round((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+// Expiration urgency bucket used by the client to color-code items:
+// red = expired or expiring within 3 days, yellow = within 2 weeks,
+// green = everything else / not tracked.
+export type ExpirationUrgency = 'red' | 'yellow' | 'green' | null;
+
+export function expirationUrgency(date: Date | null | undefined): ExpirationUrgency {
+  const days = daysUntil(date);
+  if (days === null) return null;
+  if (days <= 3) return 'red';
+  if (days <= 14) return 'yellow';
+  return 'green';
+}
