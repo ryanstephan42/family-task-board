@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import api, { resolveUploadUrl } from '../services/api';
+import api from '../services/api';
 import {
   Plus,
   Trash2,
@@ -20,6 +20,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { clsx } from 'clsx';
 import ReceiptScanModal from './ReceiptScanModal';
 import BarcodeScannerModal from './BarcodeScannerModal';
+import AuthenticatedPhoto from './AuthenticatedPhoto';
 
 interface FoodItem {
   id: string;
@@ -472,11 +473,7 @@ const Inventory = () => {
                           <div className="flex items-center space-x-3">
                             {editForm.photoUrl ? (
                               <div className="relative shrink-0">
-                                <img
-                                  src={resolveUploadUrl(editForm.photoUrl) || ''}
-                                  alt={editForm.name}
-                                  className="w-14 h-14 rounded-lg object-cover border border-slate-700"
-                                />
+                                <AuthenticatedPhoto itemId={item.id} alt={editForm.name || item.name} className="w-14 h-14 rounded-lg object-cover border border-slate-700" />
                                 <button
                                   onClick={() => handlePhotoRemove(item.id)}
                                   className="absolute -top-1.5 -right-1.5 bg-slate-900 border border-slate-700 rounded-full p-0.5 text-slate-400 hover:text-red-400"
@@ -605,11 +602,7 @@ const Inventory = () => {
                         <div className="flex items-center justify-between">
                           <div className="flex items-center space-x-3 flex-1 min-w-0">
                             {item.photoUrl ? (
-                              <img
-                                src={resolveUploadUrl(item.photoUrl) || ''}
-                                alt={item.name}
-                                className="w-10 h-10 rounded-lg object-cover border border-slate-700 shrink-0"
-                              />
+                              <AuthenticatedPhoto itemId={item.id} alt={item.name} className="w-10 h-10 rounded-lg object-cover border border-slate-700 shrink-0" />
                             ) : (
                               <div className="w-10 h-10 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-600 shrink-0">
                                 <Package size={16} />

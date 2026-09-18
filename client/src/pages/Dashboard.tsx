@@ -7,6 +7,8 @@ import Calendar from '../components/Calendar';
 import GroceryList from '../components/GroceryList';
 import Inventory from '../components/Inventory';
 import Meals from '../components/Meals';
+import Chat from '../components/Chat';
+import Budget from '../components/Budget';
 import { clsx } from 'clsx';
 import { AnimatePresence } from 'framer-motion';
 import { ShoppingCart, ChefHat } from 'lucide-react';
@@ -135,6 +137,8 @@ const Dashboard = ({ user }: DashboardProps) => {
             <ClipboardList size={18} />
             <span>Tasks</span>
           </button>
+          <button onClick={() => setMainTab('CHAT')} className={clsx("px-6 py-2.5 rounded-lg text-sm font-bold", mainTab === 'CHAT' ? "bg-sky-600 text-white" : "text-slate-400 hover:text-slate-200")}>Chat</button>
+          <button onClick={() => setMainTab('BUDGET')} className={clsx("px-6 py-2.5 rounded-lg text-sm font-bold", mainTab === 'BUDGET' ? "bg-sky-600 text-white" : "text-slate-400 hover:text-slate-200")}>Budget</button>
           <button
             onClick={() => setMainTab('CALENDAR')}
             className={clsx(
@@ -178,7 +182,11 @@ const Dashboard = ({ user }: DashboardProps) => {
         )}
       </div>
 
-      {mainTab === 'CALENDAR' ? (
+      {mainTab === 'CHAT' ? (
+        <Chat />
+      ) : mainTab === 'BUDGET' ? (
+        <Budget />
+      ) : mainTab === 'CALENDAR' ? (
         <Calendar />
       ) : loading && activeTab !== 'GROCERY' && activeTab !== 'INVENTORY' && activeTab !== 'MEALS' ? (
         <div className="flex justify-center py-20">

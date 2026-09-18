@@ -1,16 +1,15 @@
 import { Router, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
 import path from 'path';
 import fs from 'fs';
 import { randomUUID } from 'crypto';
 import multer from 'multer';
 import { authenticateToken, AuthRequest } from '../auth';
+import { prisma } from '../db';
 import { resolveCategory, resolveUnit, rememberUnit, suggestExpirationDate, COMMON_UNITS, computeLowStock } from '../categorize';
 import { resolveBarcodeProduct, rememberBarcodeProduct } from '../barcodeLookup';
 import { UPLOADS_DIR, ensureUploadsDir } from '../uploads';
 
 const router = Router();
-const prisma = new PrismaClient();
 
 ensureUploadsDir();
 const photoUpload = multer({
@@ -19,14 +18,23 @@ const photoUpload = multer({
     filename: (_req, file, cb) => cb(null, `${randomUUID()}${path.extname(file.originalname) || '.jpg'}`),
   }),
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+  fileFilter: (_req, file, cb) => {
+    if (!file.mimetype.startsWith('image/')) {
+      cb(new Error('Only image uploads are allowed'));
+      return;
+    }
+    cb(null, true);
+  },
 });
 
 // Get all inventory items (optionally filter by location or category)
 router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
+    if (!req.user?.householdId) return res.status(403).json({ error: 'Household membership is required' });
     const { location, category } = req.query;
     const items = await prisma.foodItem.findMany({
       where: {
+        householdId: req.user.householdId,
         ...(location ? { location: String(location) } : {}),
         ...(category ? { category: String(category) } : {}),
       },
@@ -43,7 +51,8 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 // so the client can offer a smart, customizable unit picker.
 router.get('/unit-options', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
-    const preferences = await prisma.itemUnitPreference.findMany();
+    if (!req.user?.householdId) return res.status(403).json({ error: 'Household membership is required' });
+    const preferences = await prisma.itemUnitPreference.findMany({ where: { householdId: req.user.householdId } });
     const learnedUnits = preferences.map((p) => p.unit);
     const allUnits = Array.from(new Set([...COMMON_UNITS, ...learnedUnits]));
     res.json({ commonUnits: allUnits, preferences });
@@ -57,9 +66,22 @@ router.get('/unit-options', authenticateToken, async (req: AuthRequest, res: Res
 // low stock), used for the "Running Low" view and grocery-list suggestions.
 router.get('/low-stock', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
+    if (!req.user?.householdId) return res.status(403).json({ error: 'Household membership is required' });
     const items = await prisma.foodItem.findMany({
-      where: { OR: [{ lowStock: true }, { parLevel: { not: null } }] },
+      where: { householdId: req.user.householdId, OR: [{ lowStock: true }, { parLevel: { not: null } }] },
       orderBy: { name: 'asc' },
+    });
+
+    router.get('/:id/photo', authenticateToken, async (req: AuthRequest, res: Response) => {
+      const item = await prisma.foodItem.findFirst({
+        where: { id: req.params.id as string, householdId: req.user?.householdId },
+        select: { photoUrl: true },
+      });
+      if (!item?.photoUrl) return res.status(404).json({ error: 'Photo not found' });
+      const filename = path.basename(item.photoUrl);
+      const filePath = path.join(UPLOADS_DIR, filename);
+      if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Photo not found' });
+      res.sendFile(filePath);
     });
     const lowItems = items.filter((i) => i.lowStock || computeLowStock(i.quantity, i.parLevel));
     res.json(lowItems);
@@ -75,7 +97,7 @@ router.get('/low-stock', authenticateToken, async (req: AuthRequest, res: Respon
 router.get('/barcode/:code', authenticateToken, async (req: AuthRequest, res: Response) => {
   const code = req.params.code as string;
   try {
-    const product = await resolveBarcodeProduct(prisma, code);
+    const product = await resolveBarcodeProduct(prisma, req.user!.householdId!, code);
     if (!product) return res.status(404).json({ error: 'No product found for this barcode' });
     res.json(product);
   } catch (error) {
@@ -93,12 +115,14 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   if (!items || !Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ error: 'Items array is required' });
   }
+  if (!req.user?.householdId) return res.status(403).json({ error: 'Household membership is required' });
+  const householdId = req.user.householdId;
 
   try {
     const createdItems = await Promise.all(
       items.map(async (item: any) => {
-        const category = await resolveCategory(prisma, item.name, item.category);
-        const unit = await resolveUnit(prisma, item.name, item.unit, category);
+        const category = await resolveCategory(prisma, item.name, householdId, item.category);
+        const unit = await resolveUnit(prisma, item.name, householdId, item.unit, category);
         const purchaseDate = item.purchaseDate ? new Date(item.purchaseDate) : new Date();
         const trackExpiration = item.trackExpiration !== undefined ? Boolean(item.trackExpiration) : true;
         const expirationDate = !trackExpiration
@@ -109,10 +133,10 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 
         // If the caller explicitly chose a unit, remember it for next time.
         if (item.unit) {
-          await rememberUnit(prisma, item.name, item.unit);
+          await rememberUnit(prisma, householdId, item.name, item.unit);
         }
         if (item.barcode) {
-          await rememberBarcodeProduct(prisma, item.barcode, item.name, category, unit);
+          await rememberBarcodeProduct(prisma, householdId, item.barcode, item.name, category, unit);
         }
 
         const quantity = item.quantity !== undefined && item.quantity !== null && item.quantity !== ''
@@ -125,6 +149,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
         return prisma.foodItem.create({
           data: {
             name: item.name,
+            householdId,
             quantity,
             unit,
             category,
@@ -150,10 +175,12 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 // Update an inventory item (quantity, unit, location, category, expiration toggle, etc.)
 router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   const id = req.params.id as string;
+  const householdId = req.user?.householdId;
   const { name, quantity, unit, category, location, purchaseDate, trackExpiration, expirationDate, notes, parLevel } = req.body;
 
   try {
-    const existing = await prisma.foodItem.findUnique({ where: { id } });
+    if (!householdId) return res.status(403).json({ error: 'Household membership is required' });
+    const existing = await prisma.foodItem.findFirst({ where: { id, householdId } });
     if (!existing) return res.status(404).json({ error: 'Item not found' });
 
     const nextTrackExpiration = trackExpiration !== undefined ? Boolean(trackExpiration) : existing.trackExpiration;
@@ -192,13 +219,13 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
     // Learn preferences for next time, same pattern grocery uses.
     if (name && category) {
       await prisma.itemCategoryPreference.upsert({
-        where: { itemName: name.toLowerCase().trim() },
+        where: { householdId_itemName: { householdId, itemName: name.toLowerCase().trim() } },
         update: { category },
-        create: { itemName: name.toLowerCase().trim(), category },
+        create: { householdId, itemName: name.toLowerCase().trim(), category },
       });
     }
     if (name && unit) {
-      await rememberUnit(prisma, name, unit);
+      await rememberUnit(prisma, householdId, name, unit);
     }
 
     res.json(item);
@@ -211,10 +238,12 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 // Quick +/- quantity adjustment (used for "use up" / restock taps in the UI)
 router.patch('/:id/quantity', authenticateToken, async (req: AuthRequest, res: Response) => {
   const id = req.params.id as string;
+  const householdId = req.user?.householdId;
   const { delta } = req.body; // e.g. -1 or +1
 
   try {
-    const existing = await prisma.foodItem.findUnique({ where: { id } });
+    if (!householdId) return res.status(403).json({ error: 'Household membership is required' });
+    const existing = await prisma.foodItem.findFirst({ where: { id, householdId } });
     if (!existing) return res.status(404).json({ error: 'Item not found' });
 
     const newQuantity = Math.max(0, existing.quantity + Number(delta || 0));
@@ -242,13 +271,15 @@ function deletePhotoFile(photoUrl: string | null) {
 // itself, taken from a phone camera or uploaded from the browser.
 router.post('/:id/photo', authenticateToken, photoUpload.single('photo'), async (req: AuthRequest, res: Response) => {
   const id = req.params.id as string;
+  const householdId = req.user?.householdId;
 
   if (!req.file) {
     return res.status(400).json({ error: 'A photo file is required (field name "photo")' });
   }
 
   try {
-    const existing = await prisma.foodItem.findUnique({ where: { id } });
+    if (!householdId) return res.status(403).json({ error: 'Household membership is required' });
+    const existing = await prisma.foodItem.findFirst({ where: { id, householdId } });
     if (!existing) return res.status(404).json({ error: 'Item not found' });
 
     deletePhotoFile(existing.photoUrl);
@@ -267,9 +298,11 @@ router.post('/:id/photo', authenticateToken, photoUpload.single('photo'), async 
 // Remove a photo from an item
 router.delete('/:id/photo', authenticateToken, async (req: AuthRequest, res: Response) => {
   const id = req.params.id as string;
+  const householdId = req.user?.householdId;
 
   try {
-    const existing = await prisma.foodItem.findUnique({ where: { id } });
+    if (!householdId) return res.status(403).json({ error: 'Household membership is required' });
+    const existing = await prisma.foodItem.findFirst({ where: { id, householdId } });
     if (!existing) return res.status(404).json({ error: 'Item not found' });
 
     deletePhotoFile(existing.photoUrl);
@@ -288,9 +321,12 @@ router.delete('/:id/photo', authenticateToken, async (req: AuthRequest, res: Res
 // Remove an inventory item (e.g. used up / thrown out)
 router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   const id = req.params.id as string;
+  const householdId = req.user?.householdId;
 
   try {
-    const existing = await prisma.foodItem.findUnique({ where: { id } });
+    if (!householdId) return res.status(403).json({ error: 'Household membership is required' });
+    const existing = await prisma.foodItem.findFirst({ where: { id, householdId } });
+    if (!existing) return res.status(404).json({ error: 'Item not found' });
     await prisma.foodItem.delete({ where: { id } });
     if (existing) deletePhotoFile(existing.photoUrl);
     res.json({ message: 'Inventory item removed' });

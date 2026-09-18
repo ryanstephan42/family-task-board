@@ -80,12 +80,13 @@ export function guessCategory(name: string): string {
 export async function resolveCategory(
   prisma: PrismaClient,
   name: string,
+  householdId: string,
   explicitCategory?: string | null
 ): Promise<string> {
   if (explicitCategory) return explicitCategory;
 
   const pref = await prisma.itemCategoryPreference.findUnique({
-    where: { itemName: name.toLowerCase().trim() },
+    where: { householdId_itemName: { householdId, itemName: name.toLowerCase().trim() } },
   });
   if (pref) return pref.category;
 
@@ -179,13 +180,14 @@ export function guessUnit(name: string, category?: string): string {
 export async function resolveUnit(
   prisma: PrismaClient,
   name: string,
+  householdId: string,
   explicitUnit?: string | null,
   category?: string
 ): Promise<string> {
   if (explicitUnit) return explicitUnit;
 
   const pref = await prisma.itemUnitPreference.findUnique({
-    where: { itemName: name.toLowerCase().trim() },
+    where: { householdId_itemName: { householdId, itemName: name.toLowerCase().trim() } },
   });
   if (pref) return pref.unit;
 
@@ -196,11 +198,11 @@ export async function resolveUnit(
  * Remember a user's chosen unit for this item name so future adds/scans
  * default to it automatically.
  */
-export async function rememberUnit(prisma: PrismaClient, name: string, unit: string): Promise<void> {
+export async function rememberUnit(prisma: PrismaClient, householdId: string, name: string, unit: string): Promise<void> {
   await prisma.itemUnitPreference.upsert({
-    where: { itemName: name.toLowerCase().trim() },
+    where: { householdId_itemName: { householdId, itemName: name.toLowerCase().trim() } },
     update: { unit },
-    create: { itemName: name.toLowerCase().trim(), unit },
+    create: { householdId, itemName: name.toLowerCase().trim(), unit },
   });
 }
 

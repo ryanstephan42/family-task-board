@@ -46,9 +46,12 @@ async function lookupOpenFoodFacts(barcode: string): Promise<BarcodeProduct | nu
  */
 export async function resolveBarcodeProduct(
   prisma: PrismaClient,
+  householdId: string,
   barcode: string
 ): Promise<BarcodeProduct | null> {
-  const remembered = await prisma.barcodeProductPreference.findUnique({ where: { barcode } });
+  const remembered = await prisma.barcodeProductPreference.findUnique({
+    where: { householdId_barcode: { householdId, barcode } },
+  });
   if (remembered) {
     return {
       barcode,
@@ -65,14 +68,15 @@ export async function resolveBarcodeProduct(
 /** Remember a barcode -> product mapping (e.g. after the user confirms/edits it). */
 export async function rememberBarcodeProduct(
   prisma: PrismaClient,
+  householdId: string,
   barcode: string,
   name: string,
   category?: string | null,
   unit?: string | null
 ): Promise<void> {
   await prisma.barcodeProductPreference.upsert({
-    where: { barcode },
+    where: { householdId_barcode: { householdId, barcode } },
     update: { name, category: category || null, unit: unit || null },
-    create: { barcode, name, category: category || null, unit: unit || null },
+    create: { householdId, barcode, name, category: category || null, unit: unit || null },
   });
 }

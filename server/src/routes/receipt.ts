@@ -1,13 +1,12 @@
 import { Router, Response } from 'express';
 import multer from 'multer';
 import { createWorker } from 'tesseract.js';
-import { PrismaClient } from '@prisma/client';
 import { authenticateToken, AuthRequest } from '../auth';
+import { prisma } from '../db';
 import { parseReceiptText, ParsedReceiptItem } from '../receiptParser';
 import { resolveCategory, resolveUnit } from '../categorize';
 
 const router = Router();
-const prisma = new PrismaClient();
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 15 * 1024 * 1024 }, // 15MB
@@ -92,6 +91,9 @@ async function scanWithCloudVision(buffer: Buffer, mimeType: string): Promise<Pa
 // saved to inventory here; the client confirms/edits then calls the
 // normal /api/inventory bulk-create endpoint.
 router.post('/scan', authenticateToken, upload.single('receipt'), async (req: AuthRequest, res: Response) => {
+  if (!req.user?.householdId) {
+    return res.status(403).json({ error: 'Household membership is required' });
+  }
   if (!req.file) {
     return res.status(400).json({ error: 'A receipt image file is required (field name "receipt")' });
   }
@@ -118,8 +120,8 @@ router.post('/scan', authenticateToken, upload.single('receipt'), async (req: Au
 
     const items: ReviewItem[] = await Promise.all(
       parsedItems.map(async (item) => {
-        const category = await resolveCategory(prisma, item.name);
-        const unit = await resolveUnit(prisma, item.name, undefined, category);
+        const category = await resolveCategory(prisma, item.name, req.user!.householdId!, undefined);
+        const unit = await resolveUnit(prisma, item.name, req.user!.householdId!, undefined, category);
         return { ...item, category, unit };
       })
     );

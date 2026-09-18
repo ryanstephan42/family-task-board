@@ -28,4 +28,6 @@ private family data in a report.
 - A single deployment is intended for one household during the initial
   productization phase. Do not share one deployment between unrelated
   households until multi-tenant isolation is explicitly released.
-
+- JSON request bodies are limited to 2 MB. Inventory photo uploads are limited
+  to 10 MB, restricted to image MIME types, and served only after authenticated
+  household ownership checks.

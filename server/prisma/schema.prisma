@@ -2,6 +2,86 @@ generator client {
   provider = "prisma-client-js"
 }
 
+model RecurringBudgetEntry {
+  id          String    @id @default(uuid())
+  householdId String
+  categoryId  String?
+  description String
+  amountCents Int
+  frequency   String
+  nextDueOn   DateTime
+  active      Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  household   Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  category    BudgetCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  @@index([householdId, nextDueOn])
+}
+
+model ChatReadState {
+  id        String      @id @default(uuid())
+  channelId String
+  userId    String
+  readAt    DateTime    @default(now())
+  channel   ChatChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, userId])
+  @@index([userId])
+}
+
+model ChatChannel {
+  id          String        @id @default(uuid())
+  householdId String
+  name        String
+  createdAt   DateTime      @default(now())
+  household   Household     @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  messages    ChatMessage[]
+  readStates  ChatReadState[]
+
+  @@unique([householdId, name])
+  @@index([householdId])
+}
+
+model ChatMessage {
+  id        String      @id @default(uuid())
+  channelId String
+  authorId  String
+  body      String
+  createdAt DateTime    @default(now())
+  channel   ChatChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  author    User        @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([channelId, createdAt])
+}
+
+model BudgetCategory {
+  id          String                 @id @default(uuid())
+  householdId String
+  name        String
+  createdAt   DateTime               @default(now())
+  household   Household              @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  transactions BudgetTransaction[]
+  recurringEntries RecurringBudgetEntry[]
+
+  @@unique([householdId, name])
+  @@index([householdId])
+}
+
+model BudgetTransaction {
+  id          String          @id @default(uuid())
+  householdId String
+  categoryId  String?
+  description String
+  amountCents Int
+  occurredOn  DateTime        @default(now())
+  createdAt   DateTime        @default(now())
+  household   Household       @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  category    BudgetCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  @@index([householdId, occurredOn])
+}
+
 datasource db {
   provider = "sqlite"
   url      = env("DATABASE_URL")
@@ -15,13 +95,47 @@ model User {
   createdTasks  Task[]   @relation("CreatedBy")
   assignedTasks Task[]   @relation("AssignedTo")
   events        Event[]
+  memberships   Membership[]
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+  messages      ChatMessage[]
+  chatReadStates ChatReadState[]
+}
+
+model Household {
+  id          String       @id @default(uuid())
+  name        String
+  timezone    String       @default("UTC")
+  memberships Membership[]
+  categoryPreferences ItemCategoryPreference[]
+  unitPreferences ItemUnitPreference[]
+  barcodePreferences BarcodeProductPreference[]
+  mealieIngredientLinks MealieIngredientLink[]
+  chatChannels ChatChannel[]
+  budgetCategories BudgetCategory[]
+  budgetTransactions BudgetTransaction[]
+  recurringBudgetEntries RecurringBudgetEntry[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+}
+
+model Membership {
+  id          String    @id @default(uuid())
+  userId      String
+  householdId String
+  role        String    @default("MEMBER")
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  household   Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+
+  @@unique([userId, householdId])
+  @@index([householdId])
 }
 
 model Task {
 
   id              String    @id @default(uuid())
+  householdId     String?
 
   title           String
 
@@ -60,6 +174,7 @@ model Task {
 model Event {
 
   id              String    @id @default(uuid())
+  householdId     String?
 
   title           String
 
@@ -97,6 +212,7 @@ model Step {
 
 model GroceryItem {
   id        String   @id @default(uuid())
+  householdId String?
   name      String
   quantity  String?
   details   String?
@@ -107,15 +223,25 @@ model GroceryItem {
 }
 
 model ItemCategoryPreference {
-  id       String @id @default(uuid())
-  itemName String @unique
-  category String
+  id          String    @id @default(uuid())
+  householdId String
+  itemName    String
+  category    String
+  household   Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+
+  @@unique([householdId, itemName])
+  @@index([householdId])
 }
 
 model ItemUnitPreference {
-  id       String @id @default(uuid())
-  itemName String @unique
-  unit     String
+  id          String    @id @default(uuid())
+  householdId String
+  itemName    String
+  unit        String
+  household   Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+
+  @@unique([householdId, itemName])
+  @@index([householdId])
 }
 
 // Remembers what a scanned barcode corresponds to (name/category/unit) so a
@@ -123,11 +249,16 @@ model ItemUnitPreference {
 // used up and removed from inventory - is instant and doesn't need another
 // lookup against the external product database.
 model BarcodeProductPreference {
-  id       String  @id @default(uuid())
-  barcode  String  @unique
-  name     String
-  category String?
-  unit     String?
+  id          String    @id @default(uuid())
+  householdId String
+  barcode     String
+  name        String
+  category    String?
+  unit        String?
+  household   Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+
+  @@unique([householdId, barcode])
+  @@index([householdId])
 }
 
 // Manual override linking a Mealie recipe ingredient name to a specific
@@ -135,17 +266,21 @@ model BarcodeProductPreference {
 // "AP flour" in Mealie vs "flour" in inventory). Keyed per recipe so the
 // same ingredient text can map differently across different recipes.
 model MealieIngredientLink {
-  id                 String   @id @default(uuid())
+  id                 String    @id @default(uuid())
+  householdId        String
   recipeSlug         String
   ingredientName     String
   inventoryItemName  String
-  createdAt          DateTime @default(now())
+  createdAt          DateTime  @default(now())
+  household           Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
 
-  @@unique([recipeSlug, ingredientName])
+  @@unique([householdId, recipeSlug, ingredientName])
+  @@index([householdId])
 }
 
 model FoodItem {
   id              String    @id @default(uuid())
+  householdId     String?
   name            String
   quantity        Float     @default(1)
   unit            String?

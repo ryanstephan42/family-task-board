@@ -1,8 +1,8 @@
 # Family Central Control
 
 Family Central Control is a self-hosted household hub for tasks, calendar,
-groceries, food inventory, and meal planning. Native chat and budgeting are
-planned product modules.
+groceries, food inventory, meal planning, chat, and budgeting. Fresh setup
+automatically creates a general chat channel and starter budget categories.
 
 The project is being prepared as a downloadable, configurable, all-in-one
 application. The primary deployment target is Docker Compose with one
@@ -41,9 +41,19 @@ mkdir -p data
 docker compose up -d --build
 ```
 
-Open `http://localhost:5123`, or the port configured by `APP_PORT`. Never reuse
-`.env` or `data/` between household deployments.
+Open `http://localhost:5123`, or the port configured by `APP_PORT`. A fresh
+deployment redirects to the guided first-run setup screen, which creates the
+household and owner account. Never reuse `.env` or `data/` between household
+deployments.
 
 See [DOCKER_DEPLOYMENT.md](DOCKER_DEPLOYMENT.md) for operational details and
 [SECURITY.md](SECURITY.md) for reporting security issues.
 
+Backups include both SQLite data and uploaded photos:
+
+```bash
+scripts/backup.sh data backups
+```
+
+Every push and pull request runs the locked server/client builds, Prisma
+generation, Compose validation, and production image build in GitHub Actions.
