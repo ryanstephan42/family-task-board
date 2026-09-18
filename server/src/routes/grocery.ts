@@ -1,15 +1,16 @@
 import { Router, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
 import { authenticateToken, AuthRequest } from '../auth';
+import { prisma } from '../db';
 import { resolveCategory, resolveUnit, suggestExpirationDate } from '../categorize';
 
 const router = Router();
-const prisma = new PrismaClient();
 
 // Get all grocery items
 router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
+    if (!req.user?.householdId) return res.status(403).json({ error: 'Household membership is required' });
     const items = await prisma.groceryItem.findMany({
+      where: { householdId: req.user.householdId },
       orderBy: { createdAt: 'desc' },
     });
     res.json(items);
@@ -25,14 +26,16 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   if (!items || !Array.isArray(items)) {
     return res.status(400).json({ error: 'Items array is required' });
   }
+  if (!req.user?.householdId) return res.status(403).json({ error: 'Household membership is required' });
 
   try {
     const createdItems = await Promise.all(
       items.map(async (item: any) => {
-        const category = await resolveCategory(prisma, item.name, item.category);
+        const category = await resolveCategory(prisma, item.name, req.user!.householdId!, item.category);
         return prisma.groceryItem.create({
           data: {
             name: item.name,
+            householdId: req.user!.householdId,
             quantity: item.quantity || null,
             details: item.details || null,
             category,
@@ -50,11 +53,15 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 // Update grocery item
 router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   const id = req.params.id as string;
+  const householdId = req.user?.householdId;
   const { name, quantity, details, category, completed } = req.body;
 
   try {
+    if (!householdId) return res.status(403).json({ error: 'Household membership is required' });
+    const existingItem = await prisma.groceryItem.findFirst({ where: { id, householdId } });
+    if (!existingItem) return res.status(404).json({ error: 'Grocery item not found' });
     const item = await prisma.groceryItem.update({
-      where: { id },
+      where: { id: existingItem.id },
       data: {
         name,
         quantity,
@@ -67,9 +74,9 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
     // If a category was provided, update the preference
     if (name && category) {
       await prisma.itemCategoryPreference.upsert({
-        where: { itemName: name.toLowerCase().trim() },
+        where: { householdId_itemName: { householdId, itemName: name.toLowerCase().trim() } },
         update: { category },
-        create: { itemName: name.toLowerCase().trim(), category },
+        create: { householdId, itemName: name.toLowerCase().trim(), category },
       });
     }
 
@@ -82,9 +89,13 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 // Delete grocery item
 router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   const id = req.params.id as string;
+  const householdId = req.user?.householdId;
 
   try {
-    await prisma.groceryItem.delete({ where: { id } });
+    if (!householdId) return res.status(403).json({ error: 'Household membership is required' });
+    const item = await prisma.groceryItem.findFirst({ where: { id, householdId } });
+    if (!item) return res.status(404).json({ error: 'Grocery item not found' });
+    await prisma.groceryItem.delete({ where: { id: item.id } });
     res.json({ message: 'Grocery item deleted' });
   } catch (error) {
     res.status(400).json({ error: 'Failed to delete grocery item' });
@@ -96,17 +107,20 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
 router.post('/:id/purchase', authenticateToken, async (req: AuthRequest, res: Response) => {
   const id = req.params.id as string;
   const { location } = req.body || {};
+  const householdId = req.user?.householdId;
 
   try {
-    const groceryItem = await prisma.groceryItem.findUnique({ where: { id } });
+    if (!householdId) return res.status(403).json({ error: 'Household membership is required' });
+    const groceryItem = await prisma.groceryItem.findFirst({ where: { id, householdId } });
     if (!groceryItem) return res.status(404).json({ error: 'Grocery item not found' });
 
-    const category = await resolveCategory(prisma, groceryItem.name, groceryItem.category);
-    const unit = await resolveUnit(prisma, groceryItem.name, undefined, category);
+    const category = await resolveCategory(prisma, groceryItem.name, householdId, groceryItem.category);
+    const unit = await resolveUnit(prisma, groceryItem.name, householdId, undefined, category);
     const purchaseDate = new Date();
     const foodItem = await prisma.foodItem.create({
       data: {
         name: groceryItem.name,
+        householdId,
         quantity: 1,
         unit,
         category,
@@ -117,7 +131,7 @@ router.post('/:id/purchase', authenticateToken, async (req: AuthRequest, res: Re
       },
     });
 
-    await prisma.groceryItem.delete({ where: { id } });
+    await prisma.groceryItem.delete({ where: { id: groceryItem.id } });
 
     res.status(201).json(foodItem);
   } catch (error) {
@@ -131,11 +145,12 @@ router.post('/:id/purchase', authenticateToken, async (req: AuthRequest, res: Re
 // which suggestions to actually add to the list.
 router.get('/suggestions', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
+    if (!req.user?.householdId) return res.status(403).json({ error: 'Household membership is required' });
     const lowItems = await prisma.foodItem.findMany({
-      where: { OR: [{ lowStock: true }, { parLevel: { not: null } } ] },
+      where: { householdId: req.user.householdId, OR: [{ lowStock: true }, { parLevel: { not: null } } ] },
     });
     const existingGroceryNames = new Set(
-      (await prisma.groceryItem.findMany({ where: { completed: false } })).map((g) =>
+      (await prisma.groceryItem.findMany({ where: { householdId: req.user.householdId, completed: false } })).map((g) =>
         g.name.toLowerCase().trim()
       )
     );
@@ -160,7 +175,8 @@ router.get('/suggestions', authenticateToken, async (req: AuthRequest, res: Resp
 // Get category preferences
 router.get('/preferences', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
-    const preferences = await prisma.itemCategoryPreference.findMany();
+    if (!req.user?.householdId) return res.status(403).json({ error: 'Household membership is required' });
+    const preferences = await prisma.itemCategoryPreference.findMany({ where: { householdId: req.user.householdId } });
     res.json(preferences);
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch preferences' });

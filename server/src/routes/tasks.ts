@@ -1,17 +1,17 @@
 import { Router, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
-import { authenticateToken, AuthRequest } from '../auth';
+import { authenticateToken, AuthRequest, requireHouseholdMembership } from '../auth';
+import { prisma } from '../db';
 
 const router = Router();
-const prisma = new PrismaClient();
 
 // Get tasks based on type or assignedToMe
-router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
+router.get('/', authenticateToken, requireHouseholdMembership, async (req: AuthRequest, res: Response) => {
   const { type, assignedToMe, status } = req.query; // FAMILY, PRIVATE, CHORE
   const userId = req.user?.id;
+  const householdId = req.user?.householdId;
 
   try {
-    const where: any = {};
+    const where: any = { householdId };
     
     if (assignedToMe === 'true') {
       where.assigneeId = userId;
@@ -44,11 +44,12 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 });
 
 // Create task
-router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
+router.post('/', authenticateToken, requireHouseholdMembership, async (req: AuthRequest, res: Response) => {
   const { title, description, type, priority, dueDate, assigneeId, steps, isRepeating, repeatFrequency } = req.body;
   const userId = req.user?.id;
+  const householdId = req.user?.householdId;
 
-  if (!userId) return res.sendStatus(401);
+  if (!userId || !householdId) return res.status(403).json({ error: 'Household membership is required' });
 
   try {
     // If it's a private task, it MUST be assigned to the creator
@@ -65,6 +66,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
         isRepeating: !!isRepeating,
         repeatFrequency: isRepeating ? repeatFrequency : null,
         creatorId: userId,
+        householdId,
         assigneeId: effectiveAssigneeId,
         steps: {
           create: steps?.map((s: string) => ({ content: s })) || [],
@@ -82,13 +84,16 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 });
 
 // Update task
-router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
+router.put('/:id', authenticateToken, requireHouseholdMembership, async (req: AuthRequest, res: Response) => {
   const id = req.params.id as string;
+  const householdId = req.user?.householdId;
   const { title, description, status, priority, assigneeId, dueDate, isRepeating, repeatFrequency } = req.body;
 
   try {
+    const existingTask = await prisma.task.findFirst({ where: { id, householdId } });
+    if (!existingTask) return res.status(404).json({ error: 'Task not found' });
     const task = await prisma.task.update({
-      where: { id },
+      where: { id: existingTask.id },
       data: {
         title,
         description,
@@ -107,12 +112,13 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
 });
 
 // Delete task
-router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
+router.delete('/:id', authenticateToken, requireHouseholdMembership, async (req: AuthRequest, res: Response) => {
   const id = req.params.id as string;
   const userId = req.user?.id;
+  const householdId = req.user?.householdId;
 
   // Check if it's a private task and if the user is the creator
-  const task = await prisma.task.findUnique({ where: { id } });
+  const task = await prisma.task.findFirst({ where: { id, householdId } });
   if (task?.type === 'PRIVATE' && task.creatorId !== userId) {
     return res.status(403).json({ error: 'Unauthorized' });
   }
@@ -126,11 +132,17 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
 });
 
 // Toggle step completion
-router.patch('/:taskId/steps/:stepId', authenticateToken, async (req: AuthRequest, res: Response) => {
+router.patch('/:taskId/steps/:stepId', authenticateToken, requireHouseholdMembership, async (req: AuthRequest, res: Response) => {
   const stepId = req.params.stepId as string;
+  const taskId = req.params.taskId as string;
+  const householdId = req.user?.householdId;
   const { completed } = req.body;
 
   try {
+    const ownedStep = await prisma.step.findFirst({
+      where: { id: stepId, task: { id: taskId, householdId } },
+    });
+    if (!ownedStep) return res.status(404).json({ error: 'Step not found' });
     const step = await prisma.step.update({
       where: { id: stepId },
       data: { completed },

@@ -1,11 +1,10 @@
 import { Router, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
 import { authenticateToken, AuthRequest } from '../auth';
+import { prisma } from '../db';
 import { isMealieConfigured, fetchAllRecipes, fetchRecipeDetail } from '../mealieClient';
 import { findBestInventoryMatch } from '../ingredientMatch';
 
 const router = Router();
-const prisma = new PrismaClient();
 
 // Simple status check the client can use to show "Mealie is offline"
 // messaging instead of erroring out.
@@ -14,6 +13,7 @@ router.get('/status', authenticateToken, async (req: AuthRequest, res: Response)
     return res.json({ configured: false, online: false });
   }
   try {
+    if (!req.user?.householdId) return res.status(403).json({ error: 'Household membership is required' });
     await fetchAllRecipes();
     res.json({ configured: true, online: true });
   } catch (error) {
@@ -42,11 +42,16 @@ router.get('/recipes/:slug/match', authenticateToken, async (req: AuthRequest, r
     return res.status(503).json({ error: 'Mealie is not configured', configured: false });
   }
   const slug = req.params.slug as string;
+  if (!req.user?.householdId) return res.status(403).json({ error: 'Household membership is required' });
+  const householdId = req.user.householdId;
 
   try {
     const [recipe, inventory] = await Promise.all([
       fetchRecipeDetail(slug),
-      prisma.foodItem.findMany({ select: { id: true, name: true, quantity: true, unit: true } }),
+      prisma.foodItem.findMany({
+        where: { householdId },
+        select: { id: true, name: true, quantity: true, unit: true },
+      }),
     ]);
 
     const matches = await Promise.all(
@@ -55,6 +60,7 @@ router.get('/recipes/:slug/match', authenticateToken, async (req: AuthRequest, r
         .map(async (ing) => {
           const { item, confidence, isManualLink } = await findBestInventoryMatch(
             prisma,
+            householdId,
             slug,
             ing.name,
             inventory
@@ -92,9 +98,13 @@ router.get('/what-can-i-make', authenticateToken, async (req: AuthRequest, res: 
     return res.status(503).json({ error: 'Mealie is not configured', configured: false });
   }
   try {
+    if (!req.user?.householdId) return res.status(403).json({ error: 'Household membership is required' });
     const [recipes, inventory] = await Promise.all([
       fetchAllRecipes(),
-      prisma.foodItem.findMany({ select: { id: true, name: true, quantity: true, unit: true } }),
+      prisma.foodItem.findMany({
+        where: { householdId: req.user.householdId },
+        select: { id: true, name: true, quantity: true, unit: true },
+      }),
     ]);
 
     const results = await Promise.all(
@@ -106,7 +116,7 @@ router.get('/what-can-i-make', authenticateToken, async (req: AuthRequest, res: 
             return { slug: recipe.slug, name: recipe.name, image: recipe.image, missingCount: null, totalIngredients: 0 };
           }
           const matches = await Promise.all(
-            usable.map((ing) => findBestInventoryMatch(prisma, summary.slug, ing.name, inventory))
+            usable.map((ing) => findBestInventoryMatch(prisma, req.user!.householdId!, summary.slug, ing.name, inventory))
           );
           const missingCount = matches.filter((m) => !m.item).length;
           return {
@@ -142,16 +152,18 @@ router.get('/what-can-i-make', authenticateToken, async (req: AuthRequest, res: 
 router.post('/recipes/:slug/link', authenticateToken, async (req: AuthRequest, res: Response) => {
   const slug = req.params.slug as string;
   const { ingredientName, inventoryItemName } = req.body;
+  const householdId = req.user?.householdId;
 
+  if (!householdId) return res.status(403).json({ error: 'Household membership is required' });
   if (!ingredientName || !inventoryItemName) {
     return res.status(400).json({ error: 'ingredientName and inventoryItemName are required' });
   }
 
   try {
     const link = await prisma.mealieIngredientLink.upsert({
-      where: { recipeSlug_ingredientName: { recipeSlug: slug, ingredientName } },
+      where: { householdId_recipeSlug_ingredientName: { householdId, recipeSlug: slug, ingredientName } },
       update: { inventoryItemName },
-      create: { recipeSlug: slug, ingredientName, inventoryItemName },
+      create: { householdId, recipeSlug: slug, ingredientName, inventoryItemName },
     });
     res.status(201).json(link);
   } catch (error) {
@@ -164,10 +176,12 @@ router.post('/recipes/:slug/link', authenticateToken, async (req: AuthRequest, r
 router.delete('/recipes/:slug/link/:ingredientName', authenticateToken, async (req: AuthRequest, res: Response) => {
   const slug = req.params.slug as string;
   const ingredientName = decodeURIComponent(req.params.ingredientName as string);
+  const householdId = req.user?.householdId;
 
   try {
+    if (!householdId) return res.status(403).json({ error: 'Household membership is required' });
     await prisma.mealieIngredientLink.delete({
-      where: { recipeSlug_ingredientName: { recipeSlug: slug, ingredientName } },
+      where: { householdId_recipeSlug_ingredientName: { householdId, recipeSlug: slug, ingredientName } },
     });
     res.json({ message: 'Link removed' });
   } catch (error) {

@@ -57,12 +57,13 @@ export interface InventoryLike {
  */
 export async function findBestInventoryMatch(
   prisma: PrismaClient,
+  householdId: string,
   recipeSlug: string,
   ingredientName: string,
   inventory: InventoryLike[]
 ): Promise<{ item: InventoryLike | null; confidence: number; isManualLink: boolean }> {
   const link = await prisma.mealieIngredientLink.findUnique({
-    where: { recipeSlug_ingredientName: { recipeSlug, ingredientName } },
+    where: { householdId_recipeSlug_ingredientName: { householdId, recipeSlug, ingredientName } },
   });
   if (link) {
     const item = inventory.find((i) => i.name.toLowerCase().trim() === link.inventoryItemName.toLowerCase().trim());
