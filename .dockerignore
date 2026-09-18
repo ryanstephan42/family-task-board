@@ -1,0 +1,11 @@
+.git
+.gitignore
+.env
+.env.*
+data
+**/node_modules
+**/dist
+**/*.db
+**/*.db-journal
+**/*.log
+

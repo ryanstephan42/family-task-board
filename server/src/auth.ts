@@ -1,7 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
-
-const JWT_SECRET = process.env.JWT_SECRET || 'family-secret-key-123';
+import { config } from './config';
 
 export interface AuthRequest extends Request {
   user?: {
@@ -16,7 +15,7 @@ export const authenticateToken = (req: AuthRequest, res: Response, next: NextFun
 
   if (!token) return res.sendStatus(401);
 
-  jwt.verify(token, JWT_SECRET, (err: any, user: any) => {
+  jwt.verify(token, config.jwtSecret, (err: any, user: any) => {
     if (err) return res.sendStatus(403);
     req.user = user;
     next();

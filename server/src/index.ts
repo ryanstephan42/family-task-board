@@ -1,6 +1,5 @@
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
 import path from 'path';
 import userRoutes from './routes/users';
 import taskRoutes from './routes/tasks';
@@ -10,11 +9,9 @@ import inventoryRoutes from './routes/inventory';
 import receiptRoutes from './routes/receipt';
 import mealsRoutes from './routes/meals';
 import { UPLOADS_DIR, ensureUploadsDir } from './uploads';
-
-dotenv.config();
+import { config } from './config';
 
 const app = express();
-const PORT = process.env.PORT || 5000;
 
 ensureUploadsDir();
 
@@ -43,6 +40,6 @@ app.get(/(.*)/, (req, res) => {
   res.sendFile(path.join(__dirname, '../../client/dist/index.html'));
 });
 
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
+app.listen(config.port, () => {
+  console.log(`Server is running on port ${config.port}`);
 });

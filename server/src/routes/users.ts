@@ -2,10 +2,10 @@ import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import { config } from '../config';
 
 const router = Router();
 const prisma = new PrismaClient();
-const JWT_SECRET = process.env.JWT_SECRET || 'family-secret-key-123';
 
 // Register
 router.post('/register', async (req, res) => {
@@ -34,7 +34,7 @@ router.post('/login', async (req, res) => {
   const validPassword = await bcrypt.compare(password, user.password);
   if (!validPassword) return res.status(400).json({ error: 'Invalid password' });
 
-  const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET);
+  const token = jwt.sign({ id: user.id, username: user.username }, config.jwtSecret);
   res.json({ token, user: { id: user.id, username: user.username, name: user.name } });
 });
 

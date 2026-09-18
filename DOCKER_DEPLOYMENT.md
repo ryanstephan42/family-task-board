@@ -1,6 +1,6 @@
 # Docker Deployment Guide
 
-This document explains how to deploy and host the Family Task Board using Docker and Docker Compose.
+This document explains how to deploy and host the application using Docker and Docker Compose.
 
 ## Prerequisites
 
@@ -20,62 +20,34 @@ The project is structured as a monorepo with:
 1. **Clone the repository:**
    ```bash
    git clone <repository-url>
-   cd family-task-board
+   cd family-central-control
    ```
 
-2. **Prepare the Data Directory:**
-   The application uses SQLite for the database. Ensure the `data` directory exists in the root:
+2. **Configure the deployment:**
+   ```bash
+   cp .env.example .env
+   openssl rand -hex 32
+   ```
+   Paste the generated value after `JWT_SECRET=` in `.env`. Never reuse this
+   secret between household deployments.
+
+3. **Prepare the Data Directory:**
+   The application uses SQLite and local upload storage. Create a separate data
+   directory for this deployment:
    ```bash
    mkdir -p data
    ```
 
-3. **Configure Environment Variables:**
-   The `docker-compose.yml` file contains default environment variables. You can modify them directly or create a `.env` file in the root.
-
-   Key variables:
-   - `JWT_SECRET`: A secure random string for signing tokens.
-   - `PORT`: Internal port the server runs on (default: 5000).
-   - `DATABASE_URL`: Path to the SQLite database file.
-
-4. **External Network (Important):**
-   The current `docker-compose.yml` expects an external network named `budget_budget-network`. If you don't have this network, you can:
-   
-   A. Create it:
-      ```bash
-      docker network create budget_budget-network
-      ```
-   B. Or, modify `docker-compose.yml` to use a standard bridge network (see below).
-
-5. **Build and Run:**
+4. **Build and Run:**
    ```bash
-   docker-compose up -d --build
+   docker compose up -d --build
    ```
 
-6. **Access the App:**
-   The app will be available at `http://localhost:5123` (or the port specified in your `docker-compose.yml`).
+5. **Access the App:**
+   The app will be available at `http://localhost:5123` (or the `APP_PORT`
+   configured in `.env`).
 
 ## Detailed Configuration
-
-### Standalone Docker Compose (Recommended for simple setups)
-
-If you don't need the external network, you can simplify the `docker-compose.yml` like this:
-
-```yaml
-services:
-  app:
-    build: .
-    container_name: family-task-board
-    ports:
-      - "5123:5000"
-    environment:
-      - DATABASE_URL=file:/app/server/data/prod.db
-      - JWT_SECRET=change-this-to-a-secure-secret
-      - PORT=5000
-      - NODE_ENV=production
-    volumes:
-      - ./data:/app/server/data
-    restart: always
-```
 
 ### Dockerfile Breakdown
 
@@ -90,17 +62,16 @@ The `Dockerfile` uses a 3-stage build process:
 services:
   app:
     build: .
-    container_name: family-task-board
     ports:
-      - "5123:5000" # Map host port 5123 to container port 5000
+      - "${APP_PORT:-5123}:5000"
     environment:
-      - DATABASE_URL=file:/app/server/data/prod.db
-      - JWT_SECRET=your-secret-here
-      - PORT=5000
-      - NODE_ENV=production
+      DATABASE_URL: file:/app/server/data/prod.db
+      JWT_SECRET: "${JWT_SECRET:?Set JWT_SECRET in .env before starting}"
+      PORT: "5000"
+      NODE_ENV: production
     volumes:
-      - ./data:/app/server/data # Persist SQLite database
-    restart: always
+      - ./data:/app/server/data
+    restart: unless-stopped
 ```
 
 ### Persistence
@@ -114,7 +85,7 @@ The container is configured to automatically run Prisma migrations on startup:
 
 ## Troubleshooting
 
-- **Logs:** Check container logs with `docker logs family-task-board`.
+- **Logs:** Check container logs with `docker compose logs app`.
 - **Permissions:** Ensure the `data/` directory has write permissions for the user running Docker.
 - **Port Conflicts:** If port 5123 is already in use, change the host-side mapping in `docker-compose.yml`.
 
@@ -124,5 +95,5 @@ To update the application to the latest version:
 
 ```bash
 git pull
-docker-compose up -d --build
+docker compose up -d --build
 ```
