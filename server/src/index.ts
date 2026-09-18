@@ -15,7 +15,9 @@ const app = express();
 
 ensureUploadsDir();
 
-app.use(cors());
+if (config.webOrigin) {
+  app.use(cors({ origin: config.webOrigin }));
+}
 app.use(express.json());
 
 app.use('/uploads', express.static(UPLOADS_DIR));

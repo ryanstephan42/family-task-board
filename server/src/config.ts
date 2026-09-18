@@ -21,4 +21,5 @@ function readPort(): number {
 export const config = Object.freeze({
   jwtSecret: requireSecret('JWT_SECRET', 32),
   port: readPort(),
+  webOrigin: process.env.WEB_ORIGIN || undefined,
 });
