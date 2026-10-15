@@ -7,9 +7,11 @@ import Calendar from '../components/Calendar';
 import GroceryList from '../components/GroceryList';
 import Inventory from '../components/Inventory';
 import Meals from '../components/Meals';
+import Chat from '../components/Chat';
+import Budget from '../components/Budget';
 import { clsx } from 'clsx';
 import { AnimatePresence } from 'framer-motion';
-import { ShoppingCart, ChefHat } from 'lucide-react';
+import { ShoppingCart, ChefHat, Wrench, Gift, Plane, MessageCircle, Wallet } from 'lucide-react';
 
 interface DashboardProps {
   user: any;
@@ -34,7 +36,7 @@ const Dashboard = ({ user }: DashboardProps) => {
   };
 
   const fetchTasks = async () => {
-    if (mainTab === 'CALENDAR' || activeTab === 'GROCERY' || activeTab === 'INVENTORY' || activeTab === 'MEALS') return;
+    if (mainTab === 'CALENDAR' || mainTab === 'CHAT' || mainTab === 'BUDGET' || activeTab === 'GROCERY' || activeTab === 'INVENTORY' || activeTab === 'MEALS') return;
     setLoading(true);
     try {
       let endpoint = '';
@@ -67,6 +69,9 @@ const Dashboard = ({ user }: DashboardProps) => {
     { id: 'GROCERY', label: 'Grocery List', icon: ShoppingCart },
     { id: 'INVENTORY', label: 'Inventory', icon: Package },
     { id: 'MEALS', label: 'Meals', icon: ChefHat },
+    { id: 'MAINTENANCE', label: 'Home Maintenance', icon: Wrench },
+    { id: 'GIFT', label: 'Gift Ideas', icon: Gift },
+    { id: 'TRAVEL', label: 'Travel', icon: Plane },
     { id: 'PRIVATE', label: 'Private Tasks', icon: Lock },
     { id: 'ARCHIVE', label: 'Archive', icon: Archive },
   ];
@@ -145,6 +150,26 @@ const Dashboard = ({ user }: DashboardProps) => {
             <CalendarIcon size={18} />
             <span>Calendar</span>
           </button>
+          <button
+            onClick={() => setMainTab('BUDGET')}
+            className={clsx(
+              "flex items-center space-x-2 px-6 py-2.5 rounded-lg text-sm font-bold transition-all",
+              mainTab === 'BUDGET' ? "bg-sky-600 text-white shadow-lg" : "text-slate-400 hover:text-slate-200"
+            )}
+          >
+            <Wallet size={18} />
+            <span>Budget</span>
+          </button>
+          <button
+            onClick={() => setMainTab('CHAT')}
+            className={clsx(
+              "flex items-center space-x-2 px-6 py-2.5 rounded-lg text-sm font-bold transition-all",
+              mainTab === 'CHAT' ? "bg-sky-600 text-white shadow-lg" : "text-slate-400 hover:text-slate-200"
+            )}
+          >
+            <MessageCircle size={18} />
+            <span>Chat</span>
+          </button>
         </div>
 
         {mainTab === 'TASKS' && (
@@ -180,6 +205,10 @@ const Dashboard = ({ user }: DashboardProps) => {
 
       {mainTab === 'CALENDAR' ? (
         <Calendar />
+      ) : mainTab === 'BUDGET' ? (
+        <Budget />
+      ) : mainTab === 'CHAT' ? (
+        <Chat />
       ) : loading && activeTab !== 'GROCERY' && activeTab !== 'INVENTORY' && activeTab !== 'MEALS' ? (
         <div className="flex justify-center py-20">
           <RefreshCw className="animate-spin text-sky-500" size={32} />

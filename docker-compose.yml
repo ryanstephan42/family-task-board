@@ -9,6 +9,13 @@ services:
       - JWT_SECRET=bc4ee162-ca79-43ac-b0a4-aaf34ae53f23
       - PORT=5000
       - NODE_ENV=production
+      - MEALIE_URL=http://mealie:9000
+      - MEALIE_API_TOKEN=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJsb25nX3Rva2VuIjp0cnVlLCJpZCI6ImI5ZDdkYzBhLTU3MjgtNGRkMS05Zjc0LTc2ZDI5MzhhMzc0OSIsIm5hbWUiOiJ0YXNrQm9hcmRUb2tlbiIsImludGVncmF0aW9uX2lkIjoiZ2VuZXJpYyIsImV4cCI6MTk0NDkyODE3MX0.I66753tfNtcC3UmYlUNyW_-qiULb_rYyzqjpXW0a_GU
+      - MEALIE_PUBLIC_URL=https://meal.stephanfamily.com
+      - MEALIE_GROUP_SLUG=home
+      - NEXTCLOUD_CALENDAR_EMBED_URL=https://cloud.stephanfamily.com/apps/calendar/embed/ArTNAfLEBpBgb3Mz
+      - CHAT_URL=https://chat.stephanfamily.com
+      - BUDGET_URL=https://budget.stephanfamily.com
     volumes:
       - ./data:/app/server/data
     networks:

@@ -41,6 +41,9 @@ router.post('/login', async (req, res) => {
 // Get all users (for assignment)
 router.get('/', async (req, res) => {
   const users = await prisma.user.findMany({
+    // Exclude the family-bot service account: it's not a real family
+    // member and shouldn't show up as an assignee option or Family Board column.
+    where: { username: { not: 'familybot' } },
     select: { id: true, name: true, username: true },
   });
   res.json(users);

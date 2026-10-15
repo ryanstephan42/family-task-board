@@ -20,7 +20,7 @@ interface IngredientMatch {
 }
 
 interface RecipeMatchDetail {
-  recipe: { slug: string; name: string; image: string | null };
+  recipe: { slug: string; name: string; image: string | null; url: string | null };
   matches: IngredientMatch[];
   missingCount: number;
   canMake: boolean;
@@ -329,10 +329,22 @@ const Meals = () => {
               )}
             </div>
             <div className="p-4 border-t border-slate-800">
-              <p className="text-xs text-slate-500 flex items-center gap-1.5">
-                <ExternalLink size={12} />
-                Open the full recipe in Mealie to cook.
-              </p>
+              {selected?.recipe.url ? (
+                <a
+                  href={selected.recipe.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-sky-400 hover:text-sky-300 flex items-center gap-1.5"
+                >
+                  <ExternalLink size={12} />
+                  Open the full recipe in Mealie to cook.
+                </a>
+              ) : (
+                <p className="text-xs text-slate-500 flex items-center gap-1.5">
+                  <ExternalLink size={12} />
+                  Open the full recipe in Mealie to cook.
+                </p>
+              )}
             </div>
           </div>
         </div>

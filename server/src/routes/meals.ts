@@ -1,11 +1,36 @@
 import { Router, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { authenticateToken, AuthRequest } from '../auth';
-import { isMealieConfigured, fetchAllRecipes, fetchRecipeDetail } from '../mealieClient';
+import { isMealieConfigured, fetchAllRecipes, fetchRecipeDetail, getRecipeUrl } from '../mealieClient';
 import { findBestInventoryMatch } from '../ingredientMatch';
 
 const router = Router();
 const prisma = new PrismaClient();
+
+// Mealie's SQLite-backed connection pool (5 + 10 overflow) chokes if we fire
+// off a full recipe-detail fetch per recipe all at once - a "what can I make"
+// check across the whole cookbook was enough to exhaust it and time Mealie
+// out entirely. Cap how many recipe fetches run concurrently instead.
+const MEALIE_CONCURRENCY = 3;
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let nextIndex = 0;
+
+  async function worker() {
+    while (nextIndex < items.length) {
+      const i = nextIndex++;
+      results[i] = await fn(items[i]);
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
 
 // Simple status check the client can use to show "Mealie is offline"
 // messaging instead of erroring out.
@@ -73,7 +98,7 @@ router.get('/recipes/:slug/match', authenticateToken, async (req: AuthRequest, r
     const missingCount = matches.filter((m) => !m.haveIt).length;
 
     res.json({
-      recipe: { slug: recipe.slug, name: recipe.name, image: recipe.image },
+      recipe: { slug: recipe.slug, name: recipe.name, image: recipe.image, url: getRecipeUrl(recipe.slug) },
       matches,
       missingCount,
       canMake: missingCount === 0,
@@ -97,31 +122,29 @@ router.get('/what-can-i-make', authenticateToken, async (req: AuthRequest, res: 
       prisma.foodItem.findMany({ select: { id: true, name: true, quantity: true, unit: true } }),
     ]);
 
-    const results = await Promise.all(
-      recipes.map(async (summary) => {
-        try {
-          const recipe = await fetchRecipeDetail(summary.slug);
-          const usable = recipe.ingredients.filter((ing) => ing.name.trim().length > 0);
-          if (usable.length === 0) {
-            return { slug: recipe.slug, name: recipe.name, image: recipe.image, missingCount: null, totalIngredients: 0 };
-          }
-          const matches = await Promise.all(
-            usable.map((ing) => findBestInventoryMatch(prisma, summary.slug, ing.name, inventory))
-          );
-          const missingCount = matches.filter((m) => !m.item).length;
-          return {
-            slug: recipe.slug,
-            name: recipe.name,
-            image: recipe.image,
-            missingCount,
-            totalIngredients: usable.length,
-          };
-        } catch (err) {
-          console.error(`Failed to check recipe ${summary.slug}:`, err);
-          return { slug: summary.slug, name: summary.name, image: summary.image, missingCount: null, totalIngredients: 0 };
+    const results = await mapWithConcurrency(recipes, MEALIE_CONCURRENCY, async (summary) => {
+      try {
+        const recipe = await fetchRecipeDetail(summary.slug);
+        const usable = recipe.ingredients.filter((ing) => ing.name.trim().length > 0);
+        if (usable.length === 0) {
+          return { slug: recipe.slug, name: recipe.name, image: recipe.image, missingCount: null, totalIngredients: 0 };
         }
-      })
-    );
+        const matches = await Promise.all(
+          usable.map((ing) => findBestInventoryMatch(prisma, summary.slug, ing.name, inventory))
+        );
+        const missingCount = matches.filter((m) => !m.item).length;
+        return {
+          slug: recipe.slug,
+          name: recipe.name,
+          image: recipe.image,
+          missingCount,
+          totalIngredients: usable.length,
+        };
+      } catch (err) {
+        console.error(`Failed to check recipe ${summary.slug}:`, err);
+        return { slug: summary.slug, name: summary.name, image: summary.image, missingCount: null, totalIngredients: 0 };
+      }
+    });
 
     // Sort by fewest missing ingredients first (ready-to-cook recipes on top).
     results.sort((a, b) => {
