@@ -1,4 +1,4 @@
-// Scriptable widget: shows open tasks assigned to you.
+// Scriptable widget: shows open Family tasks assigned to you.
 const BASE_URL = "https://YOUR_HOST";
 const TOKEN = "fw_PASTE_TOKEN_HERE";
 
@@ -9,9 +9,11 @@ async function load() {
 }
 
 const w = new ListWidget();
+w.url = "https://tasks.stephanfamily.com";
 w.backgroundColor = new Color("#0f172a");
 try {
   const data = await load();
+  data.tasks = data.tasks.filter(task => task.type === "FAMILY");
   const title = w.addText(`${data.user.name}'s tasks`);
   title.font = Font.boldSystemFont(14);
   title.textColor = Color.white();

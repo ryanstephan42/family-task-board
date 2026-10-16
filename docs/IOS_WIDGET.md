@@ -1,6 +1,6 @@
 # iPhone widget (Scriptable)
 
-Shows your open assigned tasks on the iOS Home Screen using the free
+Shows your open assigned Family tasks on the iOS Home Screen using the free
 [Scriptable](https://scriptable.app) app and a read-only widget token.
 
 ## 1. Create a token
@@ -26,6 +26,10 @@ proxy). Prefer HTTPS since the token travels in a header.
 In Scriptable, create a script with the contents of
 [`scripts/ios/TaskWidget.js`](../scripts/ios/TaskWidget.js), set `BASE_URL` and
 `TOKEN`, then add a Scriptable widget to the Home Screen and choose the script.
+
+The script excludes chores and private tasks. Tapping the widget opens
+`https://tasks.stephanfamily.com`; change `w.url` if your web app uses another
+address. This can differ from `BASE_URL` when fetching tasks over LAN or VPN.
 
 ## Later: native WidgetKit app (option 3)
 
