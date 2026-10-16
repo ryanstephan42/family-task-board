@@ -11,6 +11,7 @@ model User {
   id            String   @id @default(uuid())
   username      String   @unique
   password      String
+  widgetTokenHash String? @unique
   name          String
   createdTasks  Task[]   @relation("CreatedBy")
   assignedTasks Task[]   @relation("AssignedTo")

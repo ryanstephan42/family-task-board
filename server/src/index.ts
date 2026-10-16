@@ -9,6 +9,7 @@ import groceryRoutes from './routes/grocery';
 import inventoryRoutes from './routes/inventory';
 import receiptRoutes from './routes/receipt';
 import mealsRoutes from './routes/meals';
+import widgetRoutes from './routes/widget';
 import configRoutes from './routes/config';
 import { UPLOADS_DIR, ensureUploadsDir } from './uploads';
 
@@ -30,6 +31,7 @@ app.use('/api/grocery', groceryRoutes);
 app.use('/api/inventory', inventoryRoutes);
 app.use('/api/receipt', receiptRoutes);
 app.use('/api/meals', mealsRoutes);
+app.use('/api/widget', widgetRoutes);
 app.use('/api/config', configRoutes);
 
 // Serve static files from the React app
