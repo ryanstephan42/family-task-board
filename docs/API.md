@@ -2,7 +2,7 @@
 
 Base URL: `https://<your-server>/api`. All bodies are JSON unless noted.
 Dates are ISO-8601 UTC strings. Authenticated routes need
-`Authorization: ******; missing token -> 401, invalid token -> 403.
+`Authorization: Bearer <token>`; missing token -> 401, invalid token -> 403.
 The server requires `JWT_SECRET` to be set and refuses to start without it.
 
 ## Public
