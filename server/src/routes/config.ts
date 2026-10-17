@@ -2,11 +2,17 @@ import { Router } from 'express';
 
 const router = Router();
 
+// Bump when the API changes in a way native clients must know about.
+const API_VERSION = 1;
+const MIN_CLIENT_API_VERSION = 1;
+
 // Small bag of public, non-secret runtime config the client needs but
 // shouldn't have baked in at build time (so it can change without a
 // container rebuild - just restart with a new env var).
 router.get('/', (_req, res) => {
   res.json({
+    apiVersion: API_VERSION,
+    minClientApiVersion: MIN_CLIENT_API_VERSION,
     // Public "share link" embed URL for the family Nextcloud calendar
     // (Settings > Calendar app > "..." > Share link > embed code). Not a
     // secret - it's a read-only public share by design - so it's fine to
