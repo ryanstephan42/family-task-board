@@ -1,7 +1,11 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'family-secret-key-123';
+const envSecret = process.env.JWT_SECRET;
+if (!envSecret) {
+  throw new Error('JWT_SECRET environment variable must be set');
+}
+export const JWT_SECRET: string = envSecret;
 
 export interface AuthRequest extends Request {
   user?: {

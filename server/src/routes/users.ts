@@ -2,10 +2,10 @@ import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import { authenticateToken, JWT_SECRET } from '../auth';
 
 const router = Router();
 const prisma = new PrismaClient();
-const JWT_SECRET = process.env.JWT_SECRET || 'family-secret-key-123';
 
 // Register
 router.post('/register', async (req, res) => {
@@ -39,7 +39,7 @@ router.post('/login', async (req, res) => {
 });
 
 // Get all users (for assignment)
-router.get('/', async (req, res) => {
+router.get('/', authenticateToken, async (req, res) => {
   const users = await prisma.user.findMany({
     // Exclude the family-bot service account: it's not a real family
     // member and shouldn't show up as an assignee option or Family Board column.
